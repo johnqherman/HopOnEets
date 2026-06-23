@@ -1,0 +1,11 @@
+{
+  "ruleset_id": "ranked_v0",
+  "mode": "solution_race",
+  "tick_rate": 60,
+  "format": "best_of_3",
+  "determinism": { "mode": "park_miller", "pin_seed": true, "pin_fps": true },
+  "locked_settings": { "game_speed": "normal", "pause": false, "fast_forward": false },
+  "state_hash_interval": 300,
+  "tiebreakers": ["completion", "finish_tick", "puzzle_pieces", "items_used", "resets"],
+  "validation": { "same_platform": "checkpoint_hashes", "cross_platform": "authoritative_resim" }
+}

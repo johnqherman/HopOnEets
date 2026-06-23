@@ -1,0 +1,5 @@
+# Treat the mod's headers as C++ and give clangd the framework include path + repo root,
+# so src/*.h resolve "eetsmod.h" (framework) and "state.h" (this repo). Needs a sibling
+# eets-mod-framework checkout. Build of record is the Makefile / eetsmod pack.
+CompileFlags:
+  Add: [-xc++, -std=c++17, -I../eets-mod-framework/include, -I.]

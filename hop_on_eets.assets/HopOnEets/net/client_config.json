@@ -1,0 +1,7 @@
+{
+  "server_url": "wss://localhost:8443",
+  "player_id": "",
+  "auth_token": "",
+  "reconnect_seconds": 10,
+  "note": "v0.2 networking config; unused by the v0.1 local build (which races a local ghost file)."
+}

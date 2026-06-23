@@ -1,0 +1,13 @@
+# build artifacts
+*.o
+*.so
+*.dll
+*.eetsmod
+build/
+.cache/
+node_modules/
+dist/
+# editor / OS
+.vscode/
+*.swp
+.DS_Store
