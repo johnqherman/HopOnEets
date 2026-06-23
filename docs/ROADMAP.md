@@ -16,6 +16,12 @@ What's done, what's left, in priority order. Pairs with the spec
 - [x] 15s build timer → force-start the sim
 - [x] netproto in TypeScript (zero runtime deps; `npm test` e2e green)
 - [x] Mod split into `src/*.h` modules (single TU)
+- [x] Animated semi-transparent Eets ghost (default-on; cycle anim path in menu; marker fallback)
+- [x] Garbage-position **root-cause fix** (Ghidra-confirmed) — `Object::GetPosition` returns a `Vector2&`
+      (a POINTER in (E/R)AX via Model@Object+0x38), not a Vector2 by value. The Linux wrapper read it
+      by-value, reinterpreting the pointer's 64 bits as two floats → `x≈1e11, y≈0`. Fix: deref the
+      pointer on BOTH platforms (Win already did) + guard the Model* at Object+0x38. Same for `GetFacing`
+      (returns `&Object+0x14`). Mod-side `valid_pos` kept as belt-and-suspenders.
 
 ## 0. Verify first (blocking — needs the game running; can't be done headless here)
 
@@ -31,8 +37,9 @@ What's done, what's left, in priority order. Pairs with the spec
 - [ ] **Level sync — CRITICAL.** Nothing makes both players load the *same* level yet (relay sends a
       seed, not a level). Need: relay picks a level from the pool → clients **load that specific level**
       programmatically (RE the level-load/`Simulator::LoadLevel` entry) → verify `level_hash` matches.
-- [ ] Server-synced countdown (both build phases start at the same real time; today each client times
-      locally from `level_load`)
+- [x] Server-synced countdown — relay broadcasts `countdown {seconds}` on match; both clients start their
+      build timer on receipt (within latency) and force-start together. (Move to after-ready once
+      level-load/ready exist.)
 - [ ] Reconnect handling; disconnect = loss (spec Part 12)
 - [ ] `wss://` + auth on the bridge/relay (not the plugin)
 - [ ] Windows online (winsock build, or dynamic-load ws2_32)
@@ -68,12 +75,11 @@ What's done, what's left, in priority order. Pairs with the spec
 ## 5. Content & polish
 
 - [ ] Curated ranked level pool (`pool_v0.json` is a placeholder — real ids/names/hashes)
-- [ ] **Animated semi-transparent Eets ghost by default** (today the default is a drawn marker; an
-      anim only shows if `ghost_anim` cfg points at a valid `.anim`). Plan: default to an Eets `.anim`
-      with a transparent tint (`DrawAnim` already returns a success bool → fall back to the marker if
-      it won't load); add an in-menu "cycle ghost sprite" button over candidate paths since the exact
-      Eets anim name lives in the game's `Data/Animations/<n>/<n>.anim`, not the exe (can't read it
-      headless). Optional: flip to the opponent's facing.
+- [~] **Animated Eets ghost** — DONE: animated semi-transparent Eets by default (`DrawAnim` +
+      transparent tint), in-menu "Cycle ghost sprite" to match your install, marker fallback if the
+      path won't load. REMAINING: match the opponent's *exact* per-motion animation + facing — stream
+      motion name / frame index / flipped and drive the ghost frame-for-frame (needs the game's anim
+      asset names + a flip-capable draw, e.g. `GraphicsEngine_DrawSprite` with swapped UVs).
 - [ ] World→screen for scrolling/zoomed levels (apply the GFX view matrix `FUN_0048f2c0`)
 - [ ] Sound cues (countdown, win/lose); result panel / rematch button
 

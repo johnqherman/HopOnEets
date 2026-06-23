@@ -61,6 +61,12 @@ function fakeMod(port: number): Mod {
   if (ma && mb) ok('private match: ' + ma);
   if (ma && !ma.endsWith(' 0')) fail('private match should be ranked=0: ' + ma);
 
+  // synced build countdown reaches both clients
+  const cdA = await A.expect((l) => l.startsWith('countdown '), 'A synced countdown');
+  const cdB = await B.expect((l) => l.startsWith('countdown '), 'B synced countdown');
+  if (cdA === 'countdown 15' && cdB === 'countdown 15') ok('synced countdown both: ' + cdA);
+  else if (cdA) fail('countdown wrong: ' + cdA + ' / ' + cdB);
+
   // build exchange: A's locked-in build reaches B as ghost items
   A.send('build marshmallow 100 200'); A.send('buildend');
   const ob = await B.expect((l) => l.startsWith('ob '), 'B sees A build');

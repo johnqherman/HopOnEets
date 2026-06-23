@@ -59,6 +59,7 @@ export function startBridge(opts: BridgeOpts): { tcp: net.Server; close(): void 
       conn.onJSON((m: any) => {
         switch (m.type) {
           case 'match_config':  toMod(`match ${m.match_id} ${m.opponent} ${m.ranked ? 1 : 0}`); break;
+          case 'countdown':     toMod(`countdown ${m.seconds}`); break;
           case 'room':          toMod(`code ${m.code}`); break;
           case 'join_failed':   toMod(`joinfail ${m.code}`); break;
           case 'opp_pos':       toMod(`g ${m.tick} ${m.x} ${m.y}`); break;

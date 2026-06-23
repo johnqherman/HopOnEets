@@ -26,6 +26,7 @@ cross-platform re-sim is still v0.3 (spec Parts 6, 11). Reference impl + e2e tes
 | `join_failed` | S→C | `code` | no such room |
 | `queue` | C→S | — | enter ranked matchmaking |
 | `match_config` | S→C | `match_id, ranked, tick_rate, seed, self, opponent` | paired; start build phase |
+| `countdown` | S→C | `seconds` | start the synced build phase; both clients align their build timer to this |
 | `pos` / `opp_pos` | C→S / S→C | `tick, x, y` | live Eets position (relayed to opponent) |
 | `build` / `opp_build` | C→S / S→C | `name, x, y` | one locked-in build item |
 | `buildend` / `opp_buildend` | C→S / S→C | — | end of the build set |
@@ -40,7 +41,7 @@ Tiebreakers (relay `decide`): completion → finish_tick → items_used (spec Pa
 ```
 mod -> bridge:  hello <id> | host | join <CODE> | queue | build <name> <x> <y> | buildend |
                 pos <tick> <x> <y> | finish <tick> <0|1> <items>
-bridge -> mod:  code <CODE> | joinfail <CODE> | match <id> <opp> <ranked0|1> |
+bridge -> mod:  code <CODE> | joinfail <CODE> | match <id> <opp> <ranked0|1> | countdown <secs> |
                 ob <name> <x> <y> | obend | g <tick> <x> <y> |
                 oppfin <tick> <0|1> <items> | result <winner> <reason> | oppleft
 ```

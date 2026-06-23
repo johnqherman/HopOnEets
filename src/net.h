@@ -26,13 +26,17 @@ static bool net_connect() {
 	return true;
 }
 static void net_handle(const std::string& ln) {
-	char a[40] = { 0 }, b[40] = { 0 }; long t; float x, y; int rk = 0;
-	if (sscanf(ln.c_str(), "g %ld %f %f", &t, &x, &y) == 3) { (void)t; g_liveX = x; g_liveY = y; g_liveValid = true; }
-	else if (sscanf(ln.c_str(), "ob %39s %f %f", a, &x, &y) == 3) { if (g_oppBuildReady) { g_oppBuild.clear(); g_oppBuildReady = false; } g_oppBuild.push_back({ a, x, y }); }
+	char a[40] = { 0 }, b[40] = { 0 }; long t; float x, y; int rk = 0, iv = 0;
+	if (sscanf(ln.c_str(), "g %ld %f %f", &t, &x, &y) == 3) { (void)t; if (valid_pos(x, y)) { g_liveX = x; g_liveY = y; g_liveValid = true; } }
+	else if (sscanf(ln.c_str(), "ob %39s %f %f", a, &x, &y) == 3) { if (valid_pos(x, y)) { if (g_oppBuildReady) { g_oppBuild.clear(); g_oppBuildReady = false; } g_oppBuild.push_back({ a, x, y }); } }
 	else if (strncmp(ln.c_str(), "obend", 5) == 0) g_oppBuildReady = true;
 	else if (sscanf(ln.c_str(), "match %39s %39s %d", a, b, &rk) >= 2) {
 		g_matched = true; g_ranked = rk != 0; g_oppId = b; g_liveValid = false; g_oppBuild.clear(); g_oppBuildReady = false;
 		snprintf(g_netMsg, sizeof(g_netMsg), "matched vs %s%s", b, g_ranked ? " [ranked]" : "");
+	} else if (sscanf(ln.c_str(), "countdown %d", &iv) == 1) {
+		if (iv > 0) g_buildSeconds = iv;      // synced build phase: align both clients to the relay signal
+		g_buildStart = Time(); g_forcedStart = false;
+		snprintf(g_netMsg, sizeof(g_netMsg), "build %ds (synced)", g_buildSeconds);
 	} else if (sscanf(ln.c_str(), "code %39s", a) == 1) snprintf(g_netMsg, sizeof(g_netMsg), "hosting - code %s", a);
 	else if (sscanf(ln.c_str(), "joinfail %39s", a) == 1) snprintf(g_netMsg, sizeof(g_netMsg), "no game for code %s", a);
 	else if (strncmp(ln.c_str(), "result ", 7) == 0) {

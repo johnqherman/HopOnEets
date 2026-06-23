@@ -19,17 +19,19 @@ static void draw_ghost(float dt) {
 	bool live = (g_matched && g_liveValid);        // realtime opponent takes priority over a recorded ghost
 	if (live) { gx = g_liveX; gy = g_liveY; }
 	else if (!g_haveGhost || !ghost_pos_at(g_tick, gx, gy)) return;
+	if (!valid_pos(gx, gy)) return;                // garbage guard
 	int sx = (int)gx, sy = (int)gy;                // identity world->screen (single-screen levels)
+	bool drew = false;                             // animated, semi-transparent Eets
 	if (!g_ghostAnim.empty())
-		DrawAnim(g_ghostAnim.c_str(), sx - 32, sy - 32, dt, 0.0f, Color(255, 255, 255, 130));
-	else
-		draw_ghost_marker(sx, sy);
+		drew = DrawAnim(g_ghostAnim.c_str(), sx - 32, sy - 32, dt, 0.0f, Color(255, 255, 255, GHOST_ALPHA));
+	if (!drew) draw_ghost_marker(sx, sy);          // fallback if the anim path doesn't resolve on this install
 	DrawTextOutlined(sx - 26, sy - 48, live ? "OPPONENT" : "GHOST", FONT_SMALL, Color(180, 220, 255, 255));
 }
 // the opponent's locked-in build, drawn as translucent ghost items
 static void draw_opp_build() {
 	if (!g_showGhost || g_oppBuild.empty()) return;
 	for (auto& it : g_oppBuild) {
+		if (!valid_pos(it.x, it.y)) continue;
 		int sx = (int)it.x, sy = (int)it.y;
 		FillRect(sx - 10, sy - 10, 20, 20, Color(170, 215, 255, 70));
 		DrawRect(sx - 10, sy - 10, 20, 20, Color(200, 235, 255, 150), 1.0f);

@@ -136,7 +136,7 @@ static void begin_sim(bool fromReset) {
 		for (auto& p : g_placements) if (p.id == id) { Vector2 q = Object_GetPosition(o); p.x = q.x; p.y = q.y; }
 	});
 	if (g_matched) {   // share our locked-in build so the opponent can see it as ghost items
-		for (auto& p : g_placements) if (!p.removed) { char bb[96]; snprintf(bb, sizeof(bb), "build %s %.1f %.1f", p.blueprint.c_str(), p.x, p.y); net_sendline(bb); }
+		for (auto& p : g_placements) if (!p.removed && valid_pos(p.x, p.y)) { char bb[96]; snprintf(bb, sizeof(bb), "build %s %.1f %.1f", p.blueprint.c_str(), p.x, p.y); net_sendline(bb); }
 		net_sendline("buildend");
 	}
 	if (g_matchActive) engage_determinism();

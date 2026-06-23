@@ -23,6 +23,13 @@ static void draw_menu() {
 
 	// ghost / replay
 	char gl[80]; snprintf(gl, sizeof(gl), "Ghost: %s", g_ghostLabel.c_str()); UI::Label(gl);
+	char gs[120]; snprintf(gs, sizeof(gs), "Sprite: %s", g_ghostAnim.empty() ? "marker" : g_ghostAnim.c_str()); UI::Label(gs);
+	if (UI::Button("Cycle ghost sprite")) {        // find the Eets .anim your install uses (then it persists)
+		int n = (int)(sizeof(GHOST_ANIM_CANDIDATES) / sizeof(*GHOST_ANIM_CANDIDATES));
+		g_ghostAnimIdx = (g_ghostAnimIdx + 1) % n;
+		g_ghostAnim = GHOST_ANIM_CANDIDATES[g_ghostAnimIdx];
+		SaveSet(MOD, "ghost_anim", g_ghostAnim.c_str());
+	}
 	if (UI::Button("Race last recording")) { if (!g_lastGhostPath.empty()) load_ghost(g_lastGhostPath); else Eets::Log("hop_on_eets: no recording yet"); }
 	if (UI::Button("Clear ghost")) clear_ghost();
 	if (UI::Button("New match (reset score)")) { g_youWins = g_ghostWins = 0; g_roundCounter = 0; g_roundMsg[0] = 0; }

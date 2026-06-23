@@ -13,6 +13,7 @@ type Verdict = { winner: 'you' | 'opponent' | 'tie'; reason: string };
 export function startRelay(port: number, log: (s: string) => void = () => {}): http.Server {
   let queue: ws.WSConn[] = [];
   let nextMatch = 1;
+  const BUILD_SECONDS = 15;   // synced build phase; both clients start their timer on `countdown`
   const peers = new Map<ws.WSConn, Peer>();
   const rooms = new Map<string, ws.WSConn>();
 
@@ -35,6 +36,9 @@ export function startRelay(port: number, log: (s: string) => void = () => {}): h
     });
     a.send(cfg(A.id, B.id));
     b.send(cfg(B.id, A.id));
+    // synced build countdown: broadcast near-simultaneously so both timers align (~latency)
+    a.send({ type: 'countdown', seconds: BUILD_SECONDS });
+    b.send({ type: 'countdown', seconds: BUILD_SECONDS });
     log(`match ${match} (${ranked ? 'ranked' : 'private'}): ${A.id} vs ${B.id}`);
   }
 

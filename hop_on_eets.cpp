@@ -41,7 +41,9 @@ extern "C" void EetsMod_Init() {
 	g_online       = cfgI("online", 0) != 0;
 	g_bridgePort   = cfgI("bridge_port", 38600);
 	g_ghostFile    = cfgS("ghost_file", "");
-	g_ghostAnim    = cfgS("ghost_anim", "");
+	g_ghostAnim    = cfgS("ghost_anim", GHOST_ANIM_CANDIDATES[0]);   // default: animated Eets ghost
+	for (int i = 0; i < (int)(sizeof(GHOST_ANIM_CANDIDATES) / sizeof(*GHOST_ANIM_CANDIDATES)); ++i)
+		if (g_ghostAnim == GHOST_ANIM_CANDIDATES[i]) g_ghostAnimIdx = i;
 	g_bridgeHost   = cfgS("bridge_host", "127.0.0.1");
 	g_playerId     = cfgS("player_id", "p1");
 	if (!g_ghostFile.empty()) load_ghost(g_ghostFile);
@@ -121,9 +123,14 @@ extern "C" void EetsMod_Update() {
 
 		if (g_phase == SIM && simulating && !World_IsPaused()) {
 			if (g_matchActive) World_SetGameSpeed(1);
-			Vector2 ep{ 0, 0 }; Object* e = World_GetEets(); if (e) ep = Object_GetPosition(e);
-			if (g_matched) { char pb[64]; snprintf(pb, sizeof(pb), "pos %ld %.1f %.1f", g_tick, ep.x, ep.y); net_sendline(pb); }
-			if (g_tick % HASH_INTERVAL == 0) g_samples.push_back({ g_tick, ep.x, ep.y, state_hash() });
+			Object* e = World_GetEets();
+			if (e) {                               // skip when Eets isn't live yet (avoids garbage 0,0/junk)
+				Vector2 ep = Object_GetPosition(e);
+				if (valid_pos(ep.x, ep.y)) {
+					if (g_matched) { char pb[64]; snprintf(pb, sizeof(pb), "pos %ld %.1f %.1f", g_tick, ep.x, ep.y); net_sendline(pb); }
+					if (g_tick % HASH_INTERVAL == 0) g_samples.push_back({ g_tick, ep.x, ep.y, state_hash() });
+				}
+			}
 			g_tick++;
 		}
 		if (g_phase == SIM) { float dt = (float)DeltaTime(); draw_ghost(dt); draw_opp_build(); }

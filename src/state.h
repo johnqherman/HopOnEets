@@ -28,8 +28,16 @@ static bool g_pinSeed     = false;
 static int  HASH_INTERVAL = 30;
 static uint32_t g_seed    = 123456789u;
 static std::string g_ghostFile;             // explicit opponent ghost (cfg); empty = practice
-static std::string g_ghostAnim;             // optional .anim to draw as the ghost (else a marker)
+static std::string g_ghostAnim;             // .anim drawn (animated, semi-transparent) as the ghost
 static bool g_showGhost   = true;
+// candidate Eets .anim paths, cycled from the F6 menu - the exact name lives in the game's Data/
+// files, not the exe (can't read it headless). Last entry "" = drawn-marker fallback.
+static const char* GHOST_ANIM_CANDIDATES[] = {
+	"DATA:Animations/eets/eets.anim", "DATA:Animations/Eets/Eets.anim",
+	"DATA:Animations/eetscharacter/eetscharacter.anim", "DATA:Animations/puff/puff.anim", "",
+};
+static int g_ghostAnimIdx = 0;
+static const int GHOST_ALPHA = 120;          // ghost transparency tint (0..255)
 
 // ---- match / phase ----
 enum Phase { IDLE, BUILD, SIM };
@@ -80,3 +88,7 @@ static double g_buildStart = 0.0; static bool g_forcedStart = false;
 
 static bool in_level() { return !World_IsInMainMenu() && !World_IsInLevelEditor(); }
 static int  placed_count() { int n = 0; for (auto& p : g_placements) if (!p.removed) n++; return n; }
+// garbage guard: reject NaN/inf and absurd coords (a stale/half-built Eets reads junk positions)
+static bool valid_pos(float x, float y) {
+	return x == x && y == y && x > -50000.f && x < 50000.f && y > -50000.f && y < 50000.f;
+}
