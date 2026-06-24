@@ -16,7 +16,7 @@ static void draw_showdown() {
 	FillRect(0, 0, sw, sh, Color(14, 12, 26, 245));  // dark stage hides the level behind the cinematic
 	int barH = (int)(sh * 0.18);                     // letterbox bars pop in/out (no wipe) - present for the whole cinematic
 	FillRect(0, 0, sw, barH, Color(0, 0, 0, 255)); FillRect(0, sh - barH, sw, barH, Color(0, 0, 0, 255));
-	Color yellow(255, 232, 40, 255), white(255, 255, 255, 255);
+	Color yellow(255, 232, 40, 255), white(255, 255, 255, 255), green(120, 255, 120, 255), red(255, 120, 90, 255);
 	if (g_showdownKind == 1) {                       // match start: two Eets standing at the screen edges
 		int th = (int)(sh * 0.55);                   // each Eets ~55% of screen height (fit-to-height = correct at any res)
 		int lcx = (int)(sw * 0.17), rcx = (int)(sw * 0.83), eetsY = cy + 24;
@@ -29,7 +29,12 @@ static void draw_showdown() {
 		if (g_ranked && g_oppElo > 0) snprintf(rn, sizeof(rn), "%s (%d)", g_oppId.c_str(),    g_oppElo); else snprintf(rn, sizeof(rn), "%s", g_oppId.c_str());
 		DrawTextOutlined(lcx - (int)strlen(ln) * 8, nameY, ln, FONT_BIG, Color(150, 220, 255, 255));
 		DrawTextOutlined(rcx - (int)strlen(rn) * 8, nameY, rn, FONT_BIG, Color(255, 160, 120, 255));
-	} else {                                         // between rounds: a quick ROUND N card
+	} else {                                         // between rounds: who won, then the ROUND N card
+		if (g_lastRoundWin != 0) {
+			const char* who = g_lastRoundWin > 0 ? g_playerId.c_str() : g_oppId.c_str();
+			char wl[48]; snprintf(wl, sizeof(wl), "%s won the round", who);
+			DrawTextOutlined(sw / 2 - (int)strlen(wl) * 8, cy - 74, wl, FONT_BIG, g_lastRoundWin > 0 ? green : red);
+		}
 		char rt[32]; snprintf(rt, sizeof(rt), "ROUND %d", g_showdownRound);
 		DrawTextOutlined(sw / 2 - (int)strlen(rt) * 12, cy - 24, rt, FONT_HUGE, yellow);
 	}

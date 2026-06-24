@@ -32,7 +32,7 @@ static void net_handle(const std::string& ln) {
 	else if (strncmp(ln.c_str(), "obend", 5) == 0) g_oppBuildReady = true;
 	else if (sscanf(ln.c_str(), "match %39s %39s %d %d %u %d %d", a, b, &rk, &lv, &sd, &g_myElo, &g_oppElo) >= 2) {
 		g_matched = true; g_ranked = rk != 0; g_oppId = b; g_levelIndex = lv; if (sd) g_seed = sd; g_liveValid = false; g_oppBuild.clear(); g_oppBuildReady = false;
-		g_noContest = false; g_desync = false; g_oppHashes.clear(); g_winForfeit = false;   // fresh match: clear desync/forfeit state
+		g_noContest = false; g_desync = false; g_oppHashes.clear(); g_winForfeit = false; g_lastRoundWin = 0;   // fresh match: clear desync/forfeit/round state
 		g_seriesOver = false; g_seriesMsg[0] = 0;   // clear the previous series banner
 		snprintf(g_netMsg, sizeof(g_netMsg), "matched vs %s%s", b, g_ranked ? " [ranked]" : "");
 		g_menuOpen = false;   // a match started: close the F6 menu
@@ -62,6 +62,7 @@ static void net_handle(const std::string& ln) {
 		char w[16] = { 0 }, r[24] = { 0 }; int yw = 0, ow = 0;
 		sscanf(ln.c_str() + 7, "%15s %23s %d %d", w, r, &yw, &ow);
 		g_youWins = yw; g_ghostWins = ow;       // relay is authoritative for the online series score
+		g_lastRoundWin = (strcmp(w, "you") == 0) ? 1 : (strcmp(w, "opponent") == 0 ? -1 : 0);   // for the next round's card
 		Eets::Log("hop_on_eets: result %s by %s  series %d-%d", w, r, yw, ow);
 		snprintf(g_roundMsg, sizeof(g_roundMsg), "ONLINE round: %s by %s  series %d-%d", w, r, yw, ow);
 	} else if (strncmp(ln.c_str(), "series ", 7) == 0) {

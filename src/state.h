@@ -100,6 +100,7 @@ static bool g_nameManual = false;   // true once the player types a custom name 
 // pre-match / between-round showdown overlay (cinematic beat so round starts feel less abrupt)
 static int    g_showdownKind     = 0;   // 0=none, 1=match-start (VS + two Eets), 2=between-rounds (ROUND N)
 static int    g_showdownRound    = 0;
+static int    g_lastRoundWin     = 0;   // previous round result for the between-round card: 1=you, -1=opponent, 0=none/tie
 static int    g_pendingShowdown  = 0;   // set on match/round; consumed at the synced countdown (build start) so both clients show it together
 static double g_showdownUntil    = 0.0;
 static constexpr double SHOWDOWN_SECS_MATCH = 4.0;   // opening VS cinematic length
