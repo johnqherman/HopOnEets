@@ -6,6 +6,7 @@
 // - the native WinHTTP WebSocket port is future work, like the other deferred Win pieces).
 #pragma once
 #include <string>
+#include <vector>
 #include <cstdint>
 #include <cstring>
 #include <cstdlib>
@@ -172,7 +173,19 @@ static std::string g_wsRx;
 
 static int wsc_raw_write(const void* p, int n) { return g_wsTls ? wsc_ssl().write(g_wsSsl, p, n) : (int)::send(g_wsFd, p, n, MSG_NOSIGNAL); }
 static int wsc_raw_read(void* p, int n)        { return g_wsTls ? wsc_ssl().read(g_wsSsl, p, n)  : (int)::recv(g_wsFd, p, n, 0); }
-static bool wsc_write_all(const char* p, size_t n) { size_t o = 0; while (o < n) { int w = wsc_raw_write(p + o, (int)(n - o)); if (w <= 0) return false; o += (size_t)w; } return true; }
+// write all bytes, retrying transient non-blocking would-block (TLS WANT_READ/WRITE, EAGAIN) briefly
+// instead of treating it as a hard failure (which would spuriously drop the connection). Small control
+// frames almost always go in one write; the spin cap bounds a genuinely stuck socket.
+static bool wsc_write_all(const char* p, size_t n) {
+	size_t o = 0; int spins = 0;
+	while (o < n) {
+		int w = wsc_raw_write(p + o, (int)(n - o));
+		if (w > 0) { o += (size_t)w; spins = 0; continue; }
+		if (++spins > 2000) return false;   // ~0.4s of would-block = treat as dead
+		usleep(200);
+	}
+	return true;
+}
 
 static void wsc_close() {
 	if (g_wsSsl) { wsc_ssl().SSL_free(g_wsSsl); g_wsSsl = nullptr; }
@@ -258,21 +271,27 @@ static void wsc_poll(void (*onmsg)(const std::string&)) {
 	char buf[4096]; int n;
 	while ((n = wsc_raw_read(buf, sizeof(buf))) > 0) g_wsRx.append(buf, (size_t)n);
 	if (n == 0 && !g_wsTls) { wsc_close(); return; }   // plain TCP peer closed
-	size_t off = 0;
-	while (true) {
-		if (g_wsRx.size() - off < 2) break;
+	// Parse ALL complete frames into local lists and consume them from g_wsRx FIRST, then dispatch. A
+	// handler (onmsg) may send "ready" etc. and even close the connection (clearing g_wsRx) - doing that
+	// mid-parse previously underflowed `size - off` and read out of bounds. Parse-then-dispatch is safe.
+	std::vector<std::string> msgs, pongs; bool gotClose = false;
+	size_t off = 0, sz = g_wsRx.size();
+	while (off + 2 <= sz) {
 		unsigned char b0 = (unsigned char)g_wsRx[off], b1 = (unsigned char)g_wsRx[off + 1];
 		int op = b0 & 0x0f; bool masked = (b1 & 0x80) != 0; uint64_t len = b1 & 0x7f; size_t hl = 2;
-		if (len == 126) { if (g_wsRx.size() - off < 4) break; len = ((unsigned char)g_wsRx[off + 2] << 8) | (unsigned char)g_wsRx[off + 3]; hl = 4; }
-		else if (len == 127) { if (g_wsRx.size() - off < 10) break; len = 0; for (int i = 0; i < 8; i++) len = (len << 8) | (unsigned char)g_wsRx[off + 2 + i]; hl = 10; }
+		if (len == 126) { if (off + 4 > sz) break; len = ((unsigned char)g_wsRx[off + 2] << 8) | (unsigned char)g_wsRx[off + 3]; hl = 4; }
+		else if (len == 127) { if (off + 10 > sz) break; len = 0; for (int i = 0; i < 8; i++) len = (len << 8) | (unsigned char)g_wsRx[off + 2 + i]; hl = 10; }
 		size_t mk = masked ? 4 : 0;
-		if (g_wsRx.size() - off < hl + mk + len) break;   // frame incomplete
-		std::string msg(g_wsRx.data() + off + hl + mk, (size_t)len);   // server frames are unmasked
+		if (off + hl + mk + len > sz) break;   // frame incomplete - wait for more
+		std::string payload(g_wsRx.data() + off + hl + mk, (size_t)len);   // server frames are unmasked
 		off += hl + mk + (size_t)len;
-		if (op == 0x1 || op == 0x0) onmsg(msg);
-		else if (op == 0x9) wsc_send_frame(0xA, msg);   // ping -> pong
-		else if (op == 0x8) { wsc_close(); break; }      // close
+		if (op == 0x1 || op == 0x0) msgs.push_back(std::move(payload));
+		else if (op == 0x9) pongs.push_back(std::move(payload));   // ping
+		else if (op == 0x8) { gotClose = true; break; }            // close
 	}
-	if (off) g_wsRx.erase(0, off);
+	if (off) g_wsRx.erase(0, off);   // consume parsed bytes before any handler runs
+	for (auto& p : pongs) { if (!g_wsOpen) break; wsc_send_frame(0xA, p); }
+	if (gotClose) { wsc_close(); return; }
+	for (auto& m : msgs) { if (!g_wsOpen) break; onmsg(m); }   // onmsg may close the socket; stop if so
 }
 #endif
