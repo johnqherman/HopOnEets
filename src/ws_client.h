@@ -40,12 +40,81 @@ struct WscUrl { bool tls = false; std::string host; int port = 0; std::string pa
 }
 
 #ifdef _WIN32
-// ---- Windows stub: online disabled until the native WinHTTP WebSocket client is ported ----
-static bool wsc_connect(const std::string&) { return false; }
-static void wsc_send_text(const std::string&) {}
-static void wsc_poll(void (*)(const std::string&)) {}
-static void wsc_close() {}
-static bool wsc_up() { return false; }
+// ---- Windows: WinHTTP WebSocket (native TLS + framing). Receive blocks, so it runs on a Win32 thread
+// feeding a CRITICAL_SECTION-guarded inbox that wsc_poll drains. Win32 threads (not std::thread) avoid the
+// mingw threading-model dependency. Cross-compiles with mingw; UNVERIFIED at runtime (no Win test yet). ----
+#include <windows.h>
+#include <winhttp.h>
+#include <vector>
+
+static HINTERNET g_whSession = nullptr, g_whConn = nullptr, g_whWs = nullptr;
+static HANDLE g_whThread = nullptr;
+static CRITICAL_SECTION g_whCs;
+static bool g_whCsInit = false;
+static std::vector<std::string> g_whInbox;
+static volatile bool g_whRun = false, g_whOpen = false;
+
+static void wsc_close() {
+	g_whRun = false;
+	if (g_whWs) WinHttpWebSocketClose(g_whWs, WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, nullptr, 0);   // unblocks the recv thread
+	if (g_whThread) { WaitForSingleObject(g_whThread, 3000); CloseHandle(g_whThread); g_whThread = nullptr; }
+	if (g_whWs)      { WinHttpCloseHandle(g_whWs); g_whWs = nullptr; }
+	if (g_whConn)    { WinHttpCloseHandle(g_whConn); g_whConn = nullptr; }
+	if (g_whSession) { WinHttpCloseHandle(g_whSession); g_whSession = nullptr; }
+	g_whOpen = false;
+	if (g_whCsInit) { EnterCriticalSection(&g_whCs); g_whInbox.clear(); LeaveCriticalSection(&g_whCs); }
+}
+static bool wsc_up() { return g_whOpen; }
+
+static DWORD WINAPI wh_recv_loop(LPVOID) {
+	std::string acc; BYTE buf[4096];
+	while (g_whRun) {
+		DWORD got = 0; WINHTTP_WEB_SOCKET_BUFFER_TYPE type;
+		if (WinHttpWebSocketReceive(g_whWs, buf, sizeof(buf), &got, &type) != NO_ERROR) break;
+		if (type == WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE) break;
+		acc.append((const char*)buf, got);
+		if (type == WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE || type == WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE) {
+			EnterCriticalSection(&g_whCs); g_whInbox.push_back(acc); LeaveCriticalSection(&g_whCs);
+			acc.clear();
+		}   // *_FRAGMENT types: keep accumulating until the terminating message buffer
+	}
+	g_whOpen = false;
+	return 0;
+}
+
+static bool wsc_connect(const std::string& url) {
+	wsc_close();
+	WscUrl u = wsc_parse(url); if (!u.ok) return false;
+	if (!g_whCsInit) { InitializeCriticalSection(&g_whCs); g_whCsInit = true; }
+	std::wstring hostW(u.host.begin(), u.host.end()), pathW(u.path.begin(), u.path.end());
+	g_whSession = WinHttpOpen(L"HopOnEets", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+	if (!g_whSession) return false;
+	g_whConn = WinHttpConnect(g_whSession, hostW.c_str(), (INTERNET_PORT)u.port, 0);
+	if (!g_whConn) { wsc_close(); return false; }
+	HINTERNET req = WinHttpOpenRequest(g_whConn, L"GET", pathW.c_str(), nullptr, WINHTTP_NO_REFERER,
+	                                   WINHTTP_DEFAULT_ACCEPT_TYPES, u.tls ? WINHTTP_FLAG_SECURE : 0);
+	if (!req) { wsc_close(); return false; }
+	bool ok = WinHttpSetOption(req, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, nullptr, 0)
+	       && WinHttpSendRequest(req, WINHTTP_NO_ADDITIONAL_HEADERS, 0, nullptr, 0, 0, 0)
+	       && WinHttpReceiveResponse(req, nullptr);
+	if (ok) g_whWs = WinHttpWebSocketCompleteUpgrade(req, 0);
+	WinHttpCloseHandle(req);
+	if (!g_whWs) { wsc_close(); return false; }
+	g_whOpen = true; g_whRun = true;
+	g_whThread = CreateThread(nullptr, 0, wh_recv_loop, nullptr, 0, nullptr);
+	return true;
+}
+
+static void wsc_send_text(const std::string& s) {
+	if (g_whOpen) WinHttpWebSocketSend(g_whWs, WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE, (PVOID)s.data(), (DWORD)s.size());
+}
+
+static void wsc_poll(void (*onmsg)(const std::string&)) {
+	if (!g_whCsInit) return;
+	std::vector<std::string> batch;
+	EnterCriticalSection(&g_whCs); batch.swap(g_whInbox); LeaveCriticalSection(&g_whCs);
+	for (auto& m : batch) onmsg(m);
+}
 #else
 #include <sys/socket.h>
 #include <netdb.h>
