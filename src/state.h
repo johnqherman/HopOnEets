@@ -109,6 +109,7 @@ static bool   g_winShow   = false;
 static double g_winUntil  = 0.0;
 static double g_winStart  = 0.0;
 static bool   g_seriesWon = false;
+static bool   g_winForfeit = false;   // the series ended by forfeit -> show "by forfeit" instead of the score
 static bool   g_eloRanked = false;
 static int    g_eloOld    = 0, g_eloNew = 0;
 static int    g_myElo     = 0, g_oppElo = 0;   // current ratings sent at ranked match start (for "Name (ELO)" display)

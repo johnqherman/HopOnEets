@@ -42,7 +42,7 @@ export function msgToModLine(m: any): string | null {
     case 'authoritative': return `auth ${m.kind} ${m.winner || '-'} ${m.reason}`;
     case 'result':        return `result ${m.winner} ${m.reason} ${m.you_wins} ${m.opp_wins}`;
     case 'elo':           return `elo ${m.value ?? 0}`;
-    case 'series_over':   return `series ${m.winner} ${m.you_wins} ${m.opp_wins} ${m.ranked ? 1 : 0} ${m.elo_old ?? 0} ${m.elo_new ?? 0}`;
+    case 'series_over':   return `series ${m.winner} ${m.you_wins} ${m.opp_wins} ${m.ranked ? 1 : 0} ${m.elo_old ?? 0} ${m.elo_new ?? 0} ${m.forfeit ? 1 : 0}`;
     case 'opponent_left': return 'oppleft';
     default:              return null;
   }

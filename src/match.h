@@ -86,7 +86,7 @@ static void countdown_beep(double remain, int& last, int fromSec) {
 // end the series: leave the level back to the main menu (the relay already freed the match, so the player
 // can re-queue from the menu). Called when the win screen's timer elapses.
 static void end_series_to_menu() {
-	g_winShow = false; g_matched = false; g_phase = IDLE; g_menuOpen = false;
+	g_winShow = false; g_winForfeit = false; g_matched = false; g_phase = IDLE; g_menuOpen = false;
 	g_interRound = false; g_seriesOver = false; g_roundMsg[0] = 0;
 	g_levelIndex = -1; g_liveValid = false; g_oppBuild.clear();
 	World_StartMainMenu();

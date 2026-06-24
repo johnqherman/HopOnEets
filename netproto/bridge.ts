@@ -76,7 +76,7 @@ export function startBridge(opts: BridgeOpts): { tcp: net.Server; close(): void 
           case 'authoritative': toMod(`auth ${m.kind} ${m.winner || '-'} ${m.reason}`); break;
           case 'result':        toMod(`result ${m.winner} ${m.reason} ${m.you_wins} ${m.opp_wins}`); break;
           case 'elo':           toMod(`elo ${m.value ?? 0}`); break;
-          case 'series_over':   toMod(`series ${m.winner} ${m.you_wins} ${m.opp_wins} ${m.ranked ? 1 : 0} ${m.elo_old ?? 0} ${m.elo_new ?? 0}`); break;
+          case 'series_over':   toMod(`series ${m.winner} ${m.you_wins} ${m.opp_wins} ${m.ranked ? 1 : 0} ${m.elo_old ?? 0} ${m.elo_new ?? 0} ${m.forfeit ? 1 : 0}`); break;
           case 'opponent_left': toMod('oppleft'); break;
         }
       });

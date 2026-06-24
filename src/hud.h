@@ -44,8 +44,9 @@ static void draw_winscreen() {
 	Color green(120, 255, 120, 255), red(255, 90, 80, 255), white(245, 245, 255, 255), grey(180, 180, 200, 255);
 	const char* title = g_seriesWon ? "VICTORY" : "DEFEAT";
 	DrawTextOutlined(sw / 2 - (int)strlen(title) * 14, cy - 120, title, FONT_HUGE, g_seriesWon ? green : red);
-	char sc[32]; snprintf(sc, sizeof(sc), "%d - %d", g_youWins, g_ghostWins);
-	DrawTextOutlined(sw / 2 - (int)strlen(sc) * 8, cy - 56, sc, FONT_BIG, white);
+	const char* sub = g_winForfeit ? "by forfeit" : nullptr;
+	char sc[32]; if (!sub) { snprintf(sc, sizeof(sc), "%d - %d", g_youWins, g_ghostWins); sub = sc; }
+	DrawTextOutlined(sw / 2 - (int)strlen(sub) * 8, cy - 56, sub, FONT_BIG, white);
 	if (g_eloRanked) {
 		double a = (Time() - g_winStart - 0.6) / 1.8; if (a < 0) a = 0; if (a > 1) a = 1;   // 0.6s hold, then ~1.8s count
 		double v = g_eloOld + (g_eloNew - g_eloOld) * a;

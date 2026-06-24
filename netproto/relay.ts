@@ -273,7 +273,7 @@ export function startRelay(port: number, log: (s: string) => void = () => {}, op
         if (p.match && q) {   // disconnect/forfeit = a series loss for the leaver (Elo still applies on ranked)
           let qE = { old: 0, neu: 0 };
           if (q.ranked) { const r = applyElo(q.id, p.id); qE = { old: r.wOld, neu: r.wNew }; log(`elo forfeit ${p.match}: ${q.name} ${qE.old}->${qE.neu}, ${p.name} ${r.lOld}->${r.lNew}`); }
-          p.opp.send({ type: 'series_over', winner: 'you', you_wins: q.wins, opp_wins: p.wins, ranked: q.ranked, elo_old: qE.old, elo_new: qE.neu });
+          p.opp.send({ type: 'series_over', winner: 'you', you_wins: q.wins, opp_wins: p.wins, ranked: q.ranked, elo_old: qE.old, elo_new: qE.neu, forfeit: true });
         }
         if (q) { q.opp = null; q.match = null; q.wins = 0; }
       }

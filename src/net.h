@@ -32,7 +32,7 @@ static void net_handle(const std::string& ln) {
 	else if (strncmp(ln.c_str(), "obend", 5) == 0) g_oppBuildReady = true;
 	else if (sscanf(ln.c_str(), "match %39s %39s %d %d %u %d %d", a, b, &rk, &lv, &sd, &g_myElo, &g_oppElo) >= 2) {
 		g_matched = true; g_ranked = rk != 0; g_oppId = b; g_levelIndex = lv; if (sd) g_seed = sd; g_liveValid = false; g_oppBuild.clear(); g_oppBuildReady = false;
-		g_noContest = false; g_desync = false; g_oppHashes.clear();   // fresh match: clear desync state
+		g_noContest = false; g_desync = false; g_oppHashes.clear(); g_winForfeit = false;   // fresh match: clear desync/forfeit state
 		g_seriesOver = false; g_seriesMsg[0] = 0;   // clear the previous series banner
 		snprintf(g_netMsg, sizeof(g_netMsg), "matched vs %s%s", b, g_ranked ? " [ranked]" : "");
 		g_menuOpen = false;   // a match started: close the F6 menu
@@ -65,11 +65,12 @@ static void net_handle(const std::string& ln) {
 		Eets::Log("hop_on_eets: result %s by %s  series %d-%d", w, r, yw, ow);
 		snprintf(g_roundMsg, sizeof(g_roundMsg), "ONLINE round: %s by %s  series %d-%d", w, r, yw, ow);
 	} else if (strncmp(ln.c_str(), "series ", 7) == 0) {
-		char w[16] = { 0 }; int yw = 0, ow = 0, rk = 0, eo = 0, en = 0;
-		sscanf(ln.c_str() + 7, "%15s %d %d %d %d %d", w, &yw, &ow, &rk, &eo, &en);
+		char w[16] = { 0 }; int yw = 0, ow = 0, rk = 0, eo = 0, en = 0, ff = 0;
+		sscanf(ln.c_str() + 7, "%15s %d %d %d %d %d %d", w, &yw, &ow, &rk, &eo, &en, &ff);
 		g_youWins = yw; g_ghostWins = ow;
 		g_interRound = false;
 		g_seriesWon = (strcmp(w, "you") == 0);
+		g_winForfeit = ff != 0;   // opponent forfeited -> "by forfeit" instead of the score
 		g_eloRanked = rk != 0; g_eloOld = eo; g_eloNew = en;
 		if (g_eloRanked && en > 0) g_myElo = en;   // update the idle rating shown in the menu
 		g_showdownKind = 0; g_pendingShowdown = 0;   // cancel any pending/playing cinematic
@@ -129,14 +130,14 @@ static void set_player_name(const std::string& raw) {
 // leave the current match: dropping the connection is a forfeit (the relay awards the remaining player the
 // series on disconnect), then reconnect as a fresh idle client so the player can queue again.
 static void forfeit_match() {
-	net_close();                         // disconnect = loss; relay sends the opponent series_over
+	net_close();                         // disconnect = loss; the relay awards the opponent the series (+ranked elo)
+	// show a DEFEAT result screen (by forfeit), then auto-return to the menu - same flow as a normal loss.
+	// We've disconnected, so we have no elo for ourselves; just show the forfeit.
+	g_seriesWon = false; g_winForfeit = true; g_eloRanked = false;
+	g_winShow = true; g_winStart = Time(); g_winUntil = Time() + WINSCREEN_SECS;
 	g_interRound = false; g_roundMsg[0] = 0; g_seriesOver = false; g_seriesMsg[0] = 0;
-	g_showdownKind = 0; g_pendingShowdown = 0; g_levelIndex = -1;   // clear match-local overlay state
-	g_phase = IDLE; g_menuOpen = false;
-	World_StartMainMenu();               // leave the level back to the main menu
-	refresh_player_id();                 // re-resolve name in case the profile changed
-	if (net_connect()) snprintf(g_netMsg, sizeof(g_netMsg), "left the match");
-	else snprintf(g_netMsg, sizeof(g_netMsg), "left - server offline");
+	g_showdownKind = 0; g_pendingShowdown = 0; g_confirmForfeit = false;
+	snprintf(g_netMsg, sizeof(g_netMsg), "forfeited");
 }
 
 // connect on demand, then send a command line to the bridge
