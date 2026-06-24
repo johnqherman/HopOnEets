@@ -19,7 +19,10 @@ static void draw_menu() {
 		char nl[64]; snprintf(nl, sizeof(nl), "User: %s_", g_nameBuf.c_str()); UI::Label(nl);
 		if (UI::Button("Set name")) { set_player_name(g_nameBuf); g_nameEntry = false; StopTextInput(); }
 	} else {
-		char nm[64]; snprintf(nm, sizeof(nm), "User: %s", g_playerId.c_str()); UI::Label(nm);
+		char nm[64];
+		if (g_myElo > 0) snprintf(nm, sizeof(nm), "User: %s (%d)", g_playerId.c_str(), g_myElo);   // name + ranked ELO inline
+		else             snprintf(nm, sizeof(nm), "User: %s", g_playerId.c_str());
+		UI::Label(nm);
 		if (UI::Button("Edit name")) { g_nameEntry = true; g_nameBuf = g_playerId; StartTextInput(); }
 	}
 	if (g_netMsg[0]) UI::Label(g_netMsg);   // status only when there's something to say (host code / matched / offline / error)

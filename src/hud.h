@@ -11,31 +11,59 @@ static void draw_showdown() {
 	if (g_showdownKind == 0) return;
 	double now = Time();
 	if (now >= g_showdownUntil) { g_showdownKind = 0; return; }
-	double dur = (g_showdownKind == 1 ? SHOWDOWN_SECS_MATCH : SHOWDOWN_SECS_ROUND);
-	double t = 1.0 - (g_showdownUntil - now) / dur; if (t < 0) t = 0; if (t > 1) t = 1;
 	int sw = ScreenWidth(), sh = ScreenHeight(), cy = sh / 2;
-	double f = (t < 0.15) ? (t / 0.15) : (t > 0.85 ? (1.0 - t) / 0.15 : 1.0);   // bars wipe in, hold, wipe out
-	int barH = (int)(sh * 0.16 * f);
-	if (barH > 0) { FillRect(0, 0, sw, barH, Color(0, 0, 0, 255)); FillRect(0, sh - barH, sw, barH, Color(0, 0, 0, 255)); }
+	GFX_ResetViewOffset();                           // draw in screen space (else the in-level camera offset shifts sprites)
+	FillRect(0, 0, sw, sh, Color(14, 12, 26, 245));  // dark stage hides the level behind the cinematic
+	int barH = (int)(sh * 0.18);                     // letterbox bars pop in/out (no wipe) - present for the whole cinematic
+	FillRect(0, 0, sw, barH, Color(0, 0, 0, 255)); FillRect(0, sh - barH, sw, barH, Color(0, 0, 0, 255));
 	Color yellow(255, 232, 40, 255), white(255, 255, 255, 255);
-	if (g_showdownKind == 1) {                       // match start: two big Eets standing at the screen edges
-		const float S = 5.5f; const int sz = (int)(64 * S), half = sz / 2, margin = 10;   // dt=0 -> frozen pose (standing, not walking)
-		if (!g_ghostAnim.empty()) {
-			DrawAnim(g_ghostAnim.c_str(), margin,           cy - half, 0.0f, 0.0f, white, false, S);   // left edge, faces center
-			DrawAnim(g_ghostAnim.c_str(), sw - sz - margin, cy - half, 0.0f, 0.0f, white, true,  S);    // right edge, mirrored to face center
-		}
-		DrawTextOutlined(sw / 2 - 18, cy - 18, "VS", FONT_BIG, yellow);
-		DrawTextOutlined(margin,           cy - half - 28, g_playerId.c_str(), FONT_NORMAL, Color(150, 220, 255, 255));
-		DrawTextOutlined(sw - sz - margin, cy - half - 28, g_oppId.c_str(),    FONT_NORMAL, Color(255, 160, 120, 255));
+	if (g_showdownKind == 1) {                       // match start: two Eets standing at the screen edges
+		int th = (int)(sh * 0.55);                   // each Eets ~55% of screen height (fit-to-height = correct at any res)
+		int lcx = (int)(sw * 0.17), rcx = (int)(sw * 0.83), eetsY = cy + 24;
+		DrawAnimFrozenFit(g_ghostAnim.c_str(), lcx, eetsY, th, white, false);   // left edge, faces center
+		DrawAnimFrozenFit(g_ghostAnim.c_str(), rcx, eetsY, th, white, true);    // right edge, mirrored
+		DrawTextOutlined(sw / 2 - 26, cy - 24, "VS", FONT_HUGE, yellow);
+		int nameY = eetsY - th / 2 - 26;             // just above each Eets' head, centered over it
+		char ln[48], rn[48];                         // "Name (ELO)" in ranked, else just the name
+		if (g_ranked && g_myElo  > 0) snprintf(ln, sizeof(ln), "%s (%d)", g_playerId.c_str(), g_myElo);  else snprintf(ln, sizeof(ln), "%s", g_playerId.c_str());
+		if (g_ranked && g_oppElo > 0) snprintf(rn, sizeof(rn), "%s (%d)", g_oppId.c_str(),    g_oppElo); else snprintf(rn, sizeof(rn), "%s", g_oppId.c_str());
+		DrawTextOutlined(lcx - (int)strlen(ln) * 8, nameY, ln, FONT_BIG, Color(150, 220, 255, 255));
+		DrawTextOutlined(rcx - (int)strlen(rn) * 8, nameY, rn, FONT_BIG, Color(255, 160, 120, 255));
 	} else {                                         // between rounds: a quick ROUND N card
 		char rt[32]; snprintf(rt, sizeof(rt), "ROUND %d", g_showdownRound);
-		DrawTextOutlined(sw / 2 - (int)strlen(rt) * 8, cy - 18, rt, FONT_BIG, yellow);
+		DrawTextOutlined(sw / 2 - (int)strlen(rt) * 12, cy - 24, rt, FONT_HUGE, yellow);
 	}
 }
 
+// series-end win screen: VICTORY/DEFEAT, the series score, and (ranked) the Elo rating counting from old
+// to new with the delta. match_update returns the player to the main menu when the timer elapses.
+static void draw_winscreen() {
+	int sw = ScreenWidth(), sh = ScreenHeight(), cy = sh / 2;
+	GFX_ResetViewOffset();
+	FillRect(0, 0, sw, sh, Color(14, 12, 26, 252));   // opaque dark stage
+	Color green(120, 255, 120, 255), red(255, 90, 80, 255), white(245, 245, 255, 255), grey(180, 180, 200, 255);
+	const char* title = g_seriesWon ? "VICTORY" : "DEFEAT";
+	DrawTextOutlined(sw / 2 - (int)strlen(title) * 14, cy - 120, title, FONT_HUGE, g_seriesWon ? green : red);
+	char sc[32]; snprintf(sc, sizeof(sc), "%d - %d", g_youWins, g_ghostWins);
+	DrawTextOutlined(sw / 2 - (int)strlen(sc) * 8, cy - 56, sc, FONT_BIG, white);
+	if (g_eloRanked) {
+		double a = (Time() - g_winStart - 0.6) / 1.8; if (a < 0) a = 0; if (a > 1) a = 1;   // 0.6s hold, then ~1.8s count
+		double v = g_eloOld + (g_eloNew - g_eloOld) * a;
+		int shown = (int)(v + 0.5);
+		char el[48]; snprintf(el, sizeof(el), "ELO %d", shown);
+		DrawTextOutlined(sw / 2 - (int)strlen(el) * 8, cy + 6, el, FONT_BIG, Color(255, 232, 40, 255));
+		int d = g_eloNew - g_eloOld;
+		char dl[24]; snprintf(dl, sizeof(dl), "%+d", d);
+		DrawTextOutlined(sw / 2 - (int)strlen(dl) * 8, cy + 46, dl, FONT_BIG, d >= 0 ? green : red);
+	}
+	DrawTextOutlined(sw / 2 - 120, sh - 56, "returning to menu...", FONT_NORMAL, grey);
+}
+
 static void draw_hud() {
+	if (g_winShow && Time() < g_winUntil) { draw_winscreen(); return; }   // win screen owns the whole frame
 	if (in_level()) {
 		bool inMatch = (g_matched || g_matchActive);
+		if (g_showdownKind != 0 && Time() < g_showdownUntil) { draw_showdown(); return; }   // cinematic owns the screen - no other overlay
 		if (g_phase == SIM && !g_interRound) { float dt = (float)DeltaTime(); draw_ghost(dt); draw_opp_build(); }
 
 		if (!g_interRound) {   // between rounds the engine's victory transition makes draw calls unsafe - skip the overlay
@@ -43,7 +71,8 @@ static void draw_hud() {
 			snprintf(hud, sizeof(hud), "HOP ON EETS %s | %s | t=%.2fs", g_matchActive ? "[MATCH]" : "[practice]", g_status, g_tick / (double)TICK_RATE);
 			DrawTextOutlined(10, 30, hud, FONT_NORMAL, Color(255, 232, 40, 255));
 			if (inMatch && g_phase == BUILD && g_buildRemain > 0) {
-				char cd[64]; snprintf(cd, sizeof(cd), "%s %.1fs", g_retryActive ? "RETRY" : "BUILD", g_buildRemain);
+				int bs = (int)g_buildRemain; if (g_buildRemain > (double)bs) bs++;   // whole seconds (ceil)
+				char cd[64]; snprintf(cd, sizeof(cd), "%s %ds", g_retryActive ? "RETRY" : "BUILD", bs);
 				DrawTextOutlined(10, 52, cd, FONT_BIG, g_buildRemain < 5 ? Color(255, 90, 80, 255) : Color(255, 232, 40, 255));
 			}
 			if (g_matched && g_deaths > 0) { char dc[48]; snprintf(dc, sizeof(dc), "deaths: %d", g_deaths); DrawTextOutlined(10, 130, dc, FONT_NORMAL, Color(255, 160, 90, 255)); }
@@ -66,14 +95,8 @@ static void draw_hud() {
 			}
 			if (g_roundMsg[0]) DrawTextOutlined(10, 74, g_roundMsg, FONT_NORMAL, Color(255, 255, 255, 255));
 			if (g_desync || g_noContest) { char db[80]; snprintf(db, sizeof(db), g_noContest ? "NO CONTEST (desync) - not ranked" : "DESYNC @t%ld - result withheld", g_desyncTick); DrawTextOutlined(10, 92, db, FONT_NORMAL, Color(255, 90, 80, 255)); }
-			draw_showdown();   // cinematic beat on top of the build phase (match start / round change)
 		}   // end !g_interRound overlay
 	}
 
-	if (g_seriesOver && g_seriesMsg[0]) {   // persistent series result - drawn on any screen until the next match
-		int w = (int)strlen(g_seriesMsg) * 16;
-		DrawTextOutlined(ScreenWidth() / 2 - w / 2, ScreenHeight() / 2 - 40, g_seriesMsg, FONT_BIG,
-		                 strstr(g_seriesMsg, "WON") ? Color(120, 255, 120, 255) : Color(255, 120, 90, 255));
-	}
 	if (g_menuOpen && !g_interRound) draw_menu();   // menu works in-level and in the main menu (not mid-transition)
 }

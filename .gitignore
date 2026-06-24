@@ -7,6 +7,9 @@ build/
 .cache/
 node_modules/
 dist/
+# relay runtime / deploy secrets
+netproto/elo.json
+netproto/.env
 # editor / OS
 .vscode/
 *.swp

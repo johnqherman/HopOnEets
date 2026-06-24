@@ -53,7 +53,13 @@ static void draw_ghost(float dt) {
 	if (!animPath.empty())
 		drew = DrawAnim(animPath.c_str(), sx - 32, sy - 32, dt, 0.0f, Color(255, 255, 255, GHOST_ALPHA), flip);
 	if (!drew) draw_ghost_marker(sx, sy);          // fallback if the anim path doesn't resolve on this install
-	DrawTextOutlined(sx - 26, sy - 48, live ? "OPPONENT" : "GHOST", FONT_SMALL, Color(180, 220, 255, 255));
+	char lbuf[48];
+	const char* nm = g_oppId.empty() ? "OPPONENT" : g_oppId.c_str();
+	const char* label;
+	if (!live) label = "GHOST";
+	else if (g_ranked && g_oppElo > 0) { snprintf(lbuf, sizeof(lbuf), "%s (%d)", nm, g_oppElo); label = lbuf; }
+	else label = nm;
+	DrawTextOutlined(sx - (int)strlen(label) * 4, sy - 48, label, FONT_SMALL, Color(180, 220, 255, 255));
 }
 // the opponent's locked-in build, drawn as translucent ghost items
 static void draw_opp_build() {

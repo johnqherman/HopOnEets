@@ -8,7 +8,7 @@ OUT    = build
 all: $(OUT)/$(MOD).so
 
 $(OUT)/$(MOD).so: $(MOD).cpp $(wildcard src/*.h) | $(OUT)
-	g++ -O2 -fPIC -std=c++17 -Wall -shared -I$(INC) -o $@ $<
+	g++ -O2 -fPIC -std=c++17 -Wall -shared -I$(INC) -o $@ $< -ldl
 
 win: $(OUT)/$(MOD).dll
 

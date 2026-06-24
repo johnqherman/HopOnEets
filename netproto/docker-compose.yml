@@ -1,0 +1,38 @@
+# Production relay for Hop On Eets. Caddy fronts the relay with automatic HTTPS (Let's Encrypt) and
+# upgrades wss:// for clients; the relay itself stays plain ws on the internal network.
+#
+#   1. Point a DNS A record (your DOMAIN) at this VPS.
+#   2. Copy .env.example -> .env and set DOMAIN.
+#   3. docker compose up -d --build
+#   Clients then connect to wss://<DOMAIN>/   (ports 80/443 must be open).
+services:
+  relay:
+    build: .
+    restart: unless-stopped
+    environment:
+      - PORT=38500
+      - ELO_FILE=/data/elo.json
+    volumes:
+      - elo:/data            # Elo ladder persists here across restarts/redeploys
+    expose:
+      - "38500"              # internal only - not published to the host
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN:?set DOMAIN in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data     # cached TLS certs
+      - caddy_config:/config
+    depends_on:
+      - relay
+
+volumes:
+  elo:
+  caddy_data:
+  caddy_config:

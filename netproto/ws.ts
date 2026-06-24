@@ -50,8 +50,10 @@ export function createParser(onMsg: (s: string) => void, onClose?: () => void): 
 }
 
 export interface WSConn {
-  send(obj: unknown): void;
+  send(obj: unknown): void;            // JSON frame
+  sendText(s: string): void;           // raw text frame (the mod speaks a newline-free text protocol)
   onJSON(fn: (m: any) => void): void;
+  onText(fn: (s: string) => void): void;   // raw string frames; if set, the JSON path is bypassed
   onClose(fn: () => void): void;
   close(): void;
 }
@@ -93,9 +95,10 @@ export function connect(
 
 function wrap(socket: net.Socket, mask: boolean): WSConn {
   let onJSON: (m: any) => void = () => {};
+  let onText: ((s: string) => void) | null = null;
   let onClose: () => void = () => {};
   const parser = createParser(
-    (s) => { let m: unknown; try { m = JSON.parse(s); } catch { return; } onJSON(m); },
+    (s) => { if (onText) { onText(s); return; } let m: unknown; try { m = JSON.parse(s); } catch { return; } onJSON(m); },
     () => onClose());
   let closed = false;
   const fireClose = () => { if (closed) return; closed = true; onClose(); };
@@ -105,7 +108,9 @@ function wrap(socket: net.Socket, mask: boolean): WSConn {
   socket.on('error', () => {});
   return {
     send: (obj: unknown) => { try { socket.write(encodeFrame(JSON.stringify(obj), mask)); } catch { /* closed */ } },
+    sendText: (s: string) => { try { socket.write(encodeFrame(s, mask)); } catch { /* closed */ } },
     onJSON: (fn) => { onJSON = fn; },
+    onText: (fn) => { onText = fn; },
     onClose: (fn) => { onClose = fn; },
     close: () => { try { socket.end(); } catch { /* closed */ } },
   };

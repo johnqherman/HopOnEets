@@ -4,13 +4,33 @@
 // simulate; authoritative cross-platform re-sim is v0.3 (see docs/hop-on-eets-spec.md Part 6).
 import * as http from 'http';
 import type * as net from 'net';
+import * as fs from 'fs';
 import * as ws from './ws';
+import { modLineToMsg, msgToModLine } from './modproto';   // mod text protocol <-> relay JSON (direct-connect clients)
 import type { RankedVerifier } from './verifier';   // type-only (verifier imports decideOutcome from here)
 
 export interface Finish { completed: boolean; finish_tick: number; items_used: number; deaths?: number; }
-interface Peer { id: string; match: string | null; opp: ws.WSConn | null; finish: Finish | null; hostCode: string | null; wins: number; ready: boolean; noContest: boolean; ranked: boolean; platform: string; log: string | null; roundTimer: ReturnType<typeof setTimeout> | null; }
+interface Peer { id: string; name: string; match: string | null; opp: ws.WSConn | null; finish: Finish | null; hostCode: string | null; wins: number; ready: boolean; noContest: boolean; ranked: boolean; platform: string; log: string | null; roundTimer: ReturnType<typeof setTimeout> | null; }
+// id = a stable client-generated UUID (the Elo key; names are mutable/spoofable so they must NOT key Elo).
+// name = the display name (the player's profile name), shown to the opponent but never used for identity.
 export interface RelayOpts { verify?: RankedVerifier; }   // when set, ranked rounds are re-sim-verified (authoritative)
 const BEST_OF = 3, WINS_NEEDED = 2;   // first to 2 round wins takes the series
+
+// ---- ELO ladder (ranked only). Persisted to a JSON file on the relay host (the VPS); keyed by player
+// name (informal - names aren't authenticated). Standard Elo, K=32, default 1000. ----
+const ELO_FILE = process.env.ELO_FILE || 'elo.json', ELO_DEFAULT = 1000, ELO_K = 32;
+let eloStore: Record<string, number> = {};
+try { eloStore = JSON.parse(fs.readFileSync(ELO_FILE, 'utf8')); } catch { /* first run: empty */ }
+const getElo = (id: string): number => eloStore[id] ?? ELO_DEFAULT;
+function saveElo(): void { try { fs.writeFileSync(ELO_FILE, JSON.stringify(eloStore, null, 2)); } catch (e) { console.error('[relay] elo save failed:', e); } }
+// apply a ranked series result and persist; returns both players' old/new ratings
+function applyElo(winnerId: string, loserId: string) {
+  const wOld = getElo(winnerId), lOld = getElo(loserId);
+  const expW = 1 / (1 + Math.pow(10, (lOld - wOld) / 400));
+  const wNew = Math.round(wOld + ELO_K * (1 - expW)), lNew = Math.round(lOld - ELO_K * (1 - expW));
+  eloStore[winnerId] = wNew; eloStore[loserId] = lNew; saveElo();
+  return { wOld, wNew, lOld, lNew };
+}
 export type Verdict = { winner: 'you' | 'opponent' | 'tie'; reason: string };
 
 // tiebreakers: completion, then (completers only) finish_tick, items_used (spec Part 3). Top-level +
@@ -55,15 +75,16 @@ export function startRelay(port: number, log: (s: string) => void = () => {}, op
     A.match = match; A.opp = b; A.finish = null; A.wins = 0; A.ready = false; A.noContest = false; A.ranked = ranked; A.log = null;
     B.match = match; B.opp = a; B.finish = null; B.wins = 0; B.ready = false; B.noContest = false; B.ranked = ranked; B.log = null;
     const level = pickLevel(), seed = pickSeed();   // round 1's level + seed (every round picks fresh - see startRound)
-    const cfg = (selfId: string, oppId: string) => ({
+    const cfg = (selfName: string, oppName: string, selfElo: number, oppElo: number) => ({
       type: 'match_config', match_id: match, mode: 'solution_race',
       ruleset: ranked ? 'ranked_v0' : 'casual', ranked, level, seed,
-      tick_rate: 60, self: selfId, opponent: oppId,
+      tick_rate: 60, self: selfName, opponent: oppName, self_elo: selfElo, opp_elo: oppElo,
     });
-    a.send(cfg(A.id, B.id));
-    b.send(cfg(B.id, A.id));
+    const eA = ranked ? getElo(A.id) : 0, eB = ranked ? getElo(B.id) : 0;
+    a.send(cfg(A.name, B.name, eA, eB));   // display names + current Elo; identity (uuid) stays server-side
+    b.send(cfg(B.name, A.name, eB, eA));
     // countdown is sent once both clients report `ready` (level loaded) - see the ready handler
-    log(`match ${match} (${ranked ? 'ranked' : 'private'}): ${A.id} vs ${B.id} (round 1 level ${level})`);
+    log(`match ${match} (${ranked ? 'ranked' : 'private'}): ${A.name} vs ${B.name} (round 1 level ${level})`);
   }
 
   // start the next round of an ongoing series: pick a FRESH level + seed (each round is a different level),
@@ -147,10 +168,19 @@ export function startRelay(port: number, log: (s: string) => void = () => {}, op
     }
     if (p.wins >= WINS_NEEDED || q.wins >= WINS_NEEDED) {   // best-of-3 decided
       const pWon = p.wins >= WINS_NEEDED;
-      conn.send({ type: 'series_over', winner: pWon ? 'you' : 'opponent', you_wins: p.wins, opp_wins: q.wins });
-      p.opp.send({ type: 'series_over', winner: pWon ? 'opponent' : 'you', you_wins: q.wins, opp_wins: p.wins });
-      log(`series over ${p.match}: ${pWon ? p.id : q.id} (best of ${BEST_OF})`);
+      let pE = { old: 0, neu: 0 }, qE = { old: 0, neu: 0 };
+      if (p.ranked) {   // ranked: adjust + persist Elo (winner gains, loser loses)
+        const r = pWon ? applyElo(p.id, q.id) : applyElo(q.id, p.id);
+        pE = pWon ? { old: r.wOld, neu: r.wNew } : { old: r.lOld, neu: r.lNew };
+        qE = pWon ? { old: r.lOld, neu: r.lNew } : { old: r.wOld, neu: r.wNew };
+        log(`elo ${p.match}: ${p.name} ${pE.old}->${pE.neu}, ${q.name} ${qE.old}->${qE.neu}`);
+      }
+      conn.send({ type: 'series_over', winner: pWon ? 'you' : 'opponent', you_wins: p.wins, opp_wins: q.wins, ranked: p.ranked, elo_old: pE.old, elo_new: pE.neu });
+      p.opp.send({ type: 'series_over', winner: pWon ? 'opponent' : 'you', you_wins: q.wins, opp_wins: p.wins, ranked: p.ranked, elo_old: qE.old, elo_new: qE.neu });
+      log(`series over ${p.match}: ${pWon ? p.name : q.name} (best of ${BEST_OF})`);
+      clearRoundTimer(p); clearRoundTimer(q);
       p.wins = 0; q.wins = 0;
+      p.match = null; p.opp = null; q.match = null; q.opp = null;   // series done: free both to re-queue after the win screen
     } else {
       startRound(conn, p.opp, p.wins + q.wins + 1);   // series continues: load a fresh level, ready-gate, then countdown
     }
@@ -159,16 +189,19 @@ export function startRelay(port: number, log: (s: string) => void = () => {}, op
   const server = http.createServer((_req, res) => { res.writeHead(426); res.end('upgrade required'); });
   server.on('upgrade', (req, socket) => {
     const conn = ws.accept(req, socket as net.Socket);
-    peers.set(conn, { id: '?', match: null, opp: null, finish: null, hostCode: null, wins: 0, ready: false, noContest: false, ranked: false, platform: '', log: null, roundTimer: null });
-    conn.onJSON((m: any) => {
+    peers.set(conn, { id: '?', name: '?', match: null, opp: null, finish: null, hostCode: null, wins: 0, ready: false, noContest: false, ranked: false, platform: '', log: null, roundTimer: null });
+    const dispatch = (m: any) => {
       const p = peers.get(conn); if (!p) return;
       switch (m.type) {
-        case 'hello': p.id = String(m.player_id ?? 'anon'); break;
+        case 'hello':
+          p.id = String(m.uuid ?? m.player_id ?? 'anon'); p.name = String(m.player_id ?? p.id);
+          conn.send({ type: 'elo', value: getElo(p.id) });   // tell the client its current ranked rating (for the F6 menu)
+          break;
         case 'host': {
           if (p.hostCode) rooms.delete(p.hostCode);
           const code = makeCode(); p.hostCode = code; rooms.set(code, conn);
           conn.send({ type: 'room', code });
-          log(`host ${p.id} room ${code}`);
+          log(`host ${p.name} room ${code}`);
           break;
         }
         case 'join': {
@@ -208,6 +241,19 @@ export function startRelay(port: number, log: (s: string) => void = () => {}, op
           maybeResult(conn);
           break;
       }
+    };
+    // The native mod connects DIRECTLY over wss speaking its text protocol; browsers/dev tools speak JSON.
+    // Decide per-connection from the first frame: a leading '{' = JSON, else mod-text. For a mod client we
+    // route each text frame through modLineToMsg and override send() to emit mod-text, so all the relay's
+    // internal `conn.send({type:...})` calls work unchanged for both client kinds.
+    let decided = false, rawMod = false;
+    conn.onText((s: string) => {
+      if (!decided) {
+        decided = true; rawMod = !s.trimStart().startsWith('{');
+        if (rawMod) conn.send = (obj: any) => { const ln = msgToModLine(obj); if (ln !== null) conn.sendText(ln); };
+      }
+      if (rawMod) { const m = modLineToMsg(s); if (m) dispatch(m); }
+      else { let m: any; try { m = JSON.parse(s); } catch { return; } dispatch(m); }
     });
     conn.onClose(() => {
       const p = peers.get(conn); if (!p) return;
@@ -218,7 +264,11 @@ export function startRelay(port: number, log: (s: string) => void = () => {}, op
         const q = peers.get(p.opp);
         clearRoundTimer(q);
         p.opp.send({ type: 'opponent_left' });
-        if (p.match && q) p.opp.send({ type: 'series_over', winner: 'you', you_wins: q.wins, opp_wins: p.wins });  // disconnect = loss
+        if (p.match && q) {   // disconnect/forfeit = a series loss for the leaver (Elo still applies on ranked)
+          let qE = { old: 0, neu: 0 };
+          if (q.ranked) { const r = applyElo(q.id, p.id); qE = { old: r.wOld, neu: r.wNew }; log(`elo forfeit ${p.match}: ${q.name} ${qE.old}->${qE.neu}, ${p.name} ${r.lOld}->${r.lNew}`); }
+          p.opp.send({ type: 'series_over', winner: 'you', you_wins: q.wins, opp_wins: p.wins, ranked: q.ranked, elo_old: qE.old, elo_new: qE.neu });
+        }
         if (q) { q.opp = null; q.match = null; q.wins = 0; }
       }
       peers.delete(conn);

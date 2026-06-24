@@ -38,7 +38,7 @@ export function startBridge(opts: BridgeOpts): { tcp: net.Server; close(): void 
     if (!relay) { pending.push(t); return; }
     const a = t.split(/\s+/);
     switch (a[0]) {
-      case 'hello':  relay.send({ type: 'hello', player_id: a[1] || player }); break;
+      case 'hello':  relay.send({ type: 'hello', uuid: a[1] || player, player_id: a[2] || a[1] || player }); break;
       case 'host':   relay.send({ type: 'host' }); break;
       case 'join':   relay.send({ type: 'join', code: a[1] || '' }); break;
       case 'queue':  relay.send({ type: 'queue' }); break;
@@ -62,7 +62,7 @@ export function startBridge(opts: BridgeOpts): { tcp: net.Server; close(): void 
       const q = pending; pending = []; q.forEach(handleModLine);
       conn.onJSON((m: any) => {
         switch (m.type) {
-          case 'match_config':  toMod(`match ${m.match_id} ${m.opponent} ${m.ranked ? 1 : 0} ${m.level ?? -1} ${m.seed ?? 0}`); break;
+          case 'match_config':  toMod(`match ${m.match_id} ${m.opponent} ${m.ranked ? 1 : 0} ${m.level ?? -1} ${m.seed ?? 0} ${m.self_elo ?? 0} ${m.opp_elo ?? 0}`); break;
           case 'countdown':     toMod(`countdown ${m.seconds} ${m.cap ?? 0}`); break;
           case 'round':         toMod(`round ${m.round} ${m.level ?? -1} ${m.seed ?? 0}`); break;
           case 'room':          toMod(`code ${m.code}`); break;
@@ -75,7 +75,8 @@ export function startBridge(opts: BridgeOpts): { tcp: net.Server; close(): void 
           case 'no_contest':    toMod(`nocontest ${m.reason} ${m.tick ?? -1}`); break;
           case 'authoritative': toMod(`auth ${m.kind} ${m.winner || '-'} ${m.reason}`); break;
           case 'result':        toMod(`result ${m.winner} ${m.reason} ${m.you_wins} ${m.opp_wins}`); break;
-          case 'series_over':   toMod(`series ${m.winner} ${m.you_wins} ${m.opp_wins}`); break;
+          case 'elo':           toMod(`elo ${m.value ?? 0}`); break;
+          case 'series_over':   toMod(`series ${m.winner} ${m.you_wins} ${m.opp_wins} ${m.ranked ? 1 : 0} ${m.elo_old ?? 0} ${m.elo_new ?? 0}`); break;
           case 'opponent_left': toMod('oppleft'); break;
         }
       });

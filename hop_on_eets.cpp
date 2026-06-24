@@ -25,6 +25,7 @@
 #include <winsock2.h>    // must precede any windows.h in the TU (eetsmod.h pulls windows.h)
 #include <ws2tcpip.h>
 #endif
+#include <random>
 #include "eetsmod.h"
 #include "eets_ui.h"
 #include "src/state.h"
@@ -39,6 +40,17 @@
 #include "src/match.h"      // round resolution + per-frame match state machine (logic)
 #include "src/hud.h"        // all in-game overlay drawing
 
+// a stable 128-bit hex id, generated once per install and persisted. This - not the (editable, spoofable)
+// display name - is the ranked Elo identity. Mixes random_device with time + a stack address so a weak
+// random_device (seen on some mingw builds) still yields a distinct id per install.
+static std::string gen_uuid() {
+	std::random_device rd;
+	uint64_t a = ((uint64_t)rd() << 32) ^ rd(), b = ((uint64_t)rd() << 32) ^ rd();
+	a ^= (uint64_t)(Time() * 1e6); b ^= (uint64_t)(uintptr_t)&a;
+	char buf[40]; snprintf(buf, sizeof(buf), "%016llx%016llx", (unsigned long long)a, (unsigned long long)b);
+	return std::string(buf);
+}
+
 extern "C" void EetsMod_Init() {
 	// Almost everything is a fixed competitive constant (see state.h); the shipped .cfg exposes nothing
 	// tunable to end users. Only these hidden dev/deployment knobs are still read from config (absent from
@@ -46,9 +58,10 @@ extern "C" void EetsMod_Init() {
 	auto cfgI = [](const char* k, int d) { return SaveGetInt(MOD, k, ConfigGetInt(MOD, k, d)); };
 	auto cfgS = [](const char* k, const char* d) { const char* v = SaveGet(MOD, k, ConfigGet(MOD, k, d)); return std::string(v ? v : d); };
 	g_online       = true;                       // always-on multiplayer (forced off below for the headless re-sim verifier)
+	g_playerUuid   = cfgS("player_uuid", "");    // stable Elo identity; generated once per install, then persisted
+	if (g_playerUuid.empty()) { g_playerUuid = gen_uuid(); SaveSet(MOD, "player_uuid", g_playerUuid.c_str()); }
 	g_pinSeed      = cfgI("pin_seed", 0) != 0;   // solo determinism self-test (Phase C); matches always pin via g_matched
-	g_bridgeHost   = cfgS("bridge_host", "127.0.0.1");   // where the local relay bridge listens
-	g_bridgePort   = cfgI("bridge_port", 38600);
+	g_relayUrl     = cfgS("relay_url", "wss://hoponeets.raccoonlagoon.com");   // direct relay endpoint (ws:// local, wss:// prod)
 	const char* savedName = SaveGet(MOD, "player_id", nullptr);   // a custom name set via the F6 menu (persisted)
 	g_nameManual   = (savedName && *savedName);
 	g_playerId     = g_nameManual ? net_safe_id(savedName) : std::string("p1");   // else "p1" until the profile name is adopted below

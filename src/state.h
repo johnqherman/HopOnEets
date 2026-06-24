@@ -80,9 +80,9 @@ static std::string g_ghostLabel = "none";
 
 // ---- realtime net ----
 static bool g_online = false;
-static std::string g_bridgeHost = "127.0.0.1";
-static int  g_bridgePort = 38600;
-static std::string g_playerId = "p1";
+static std::string g_relayUrl = "wss://hoponeets.raccoonlagoon.com";   // direct relay endpoint (ws:// or wss://); override via cfg relay_url
+static std::string g_playerId = "p1";        // display name (editable; profile name by default) - NOT the identity
+static std::string g_playerUuid;              // stable client-generated id (the Elo identity; persisted, never changes)
 static bool g_matched = false, g_ranked = false;
 static std::string g_oppId = "?";
 static int g_levelIndex = -1;                // ranked level index from the relay (resolved % pool size)
@@ -101,8 +101,17 @@ static int    g_showdownKind     = 0;   // 0=none, 1=match-start (VS + two Eets)
 static int    g_showdownRound    = 0;
 static int    g_pendingShowdown  = 0;   // set on match/round; consumed at the synced countdown (build start) so both clients show it together
 static double g_showdownUntil    = 0.0;
-static constexpr double SHOWDOWN_SECS_MATCH = 6.5;   // opening VS cinematic length
-static constexpr double SHOWDOWN_SECS_ROUND = 4.5;   // between-rounds cinematic length
+static constexpr double SHOWDOWN_SECS_MATCH = 4.0;   // opening VS cinematic length
+static constexpr double SHOWDOWN_SECS_ROUND = 3.5;   // between-rounds cinematic length
+// series-end win screen: VICTORY/DEFEAT + animated Elo delta, then auto-return to the main menu
+static bool   g_winShow   = false;
+static double g_winUntil  = 0.0;
+static double g_winStart  = 0.0;
+static bool   g_seriesWon = false;
+static bool   g_eloRanked = false;
+static int    g_eloOld    = 0, g_eloNew = 0;
+static int    g_myElo     = 0, g_oppElo = 0;   // current ratings sent at ranked match start (for "Name (ELO)" display)
+static constexpr double WINSCREEN_SECS = 6.0;
 static int    g_lastBuildTick    = -1;  // last whole-second beeped on the build/retry countdown (sub-6s tick sfx)
 static int    g_lastRoundTick    = -1;  // last whole-second beeped on the round clock
 

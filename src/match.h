@@ -75,16 +75,26 @@ static void match_on_event(const char* name, void* a, void* b) {
 
 // beep once per whole second on the final 5s of a countdown (5,4,3,2,1). `last` tracks the last second
 // announced so it fires once per tick; reset to -1 whenever the countdown is outside the (0,6) window.
-static void countdown_beep(double remain, int& last) {
-	if (remain > 0.0 && remain < 6.0) {
+static void countdown_beep(double remain, int& last, int fromSec) {
+	if (remain > 0.0 && remain < (double)(fromSec + 1)) {
 		int s = (int)remain; if (remain > (double)s) s++;   // ceil for positive = seconds remaining
-		if (s >= 1 && s <= 5 && s != last) { last = s; PlaySound("GUI Click 2"); }
+		if (s >= 1 && s <= fromSec && s != last) { last = s; PlaySound("GUI Click 2"); }
 	} else last = -1;
+}
+
+// end the series: leave the level back to the main menu (the relay already freed the match, so the player
+// can re-queue from the menu). Called when the win screen's timer elapses.
+static void end_series_to_menu() {
+	g_winShow = false; g_matched = false; g_phase = IDLE; g_menuOpen = false;
+	g_interRound = false; g_seriesOver = false; g_roundMsg[0] = 0;
+	g_levelIndex = -1; g_liveValid = false; g_oppBuild.clear();
+	World_StartMainMenu();
 }
 
 // per-frame match state machine (build timer, retry shot clock, round cap, early-Go block, speed/button lock,
 // pos/hash streaming, DNF watchdog). Sets g_buildRemain for the HUD. Does NOT draw.
 static void match_update() {
+	if (g_winShow) { if (Time() >= g_winUntil) end_series_to_menu(); return; }   // win screen owns the frame
 	// between rounds keep dismissing the vanilla victory/death dialog every frame: the win-effect timer
 	// (Builder+0x2fa4) re-shows it ~1s after the win, so a one-shot dismiss at finish isn't enough. Cleared
 	// when the next round's level loads (begin_build -> g_interRound=false; World_EnterLevel also stops modals).
@@ -131,13 +141,13 @@ static void match_update() {
 			g_buildRemain = g_buildSeconds - (Time() - g_buildStart);
 			if (g_buildRemain <= 0) { g_forcedStart = true; force_start_sim(); }
 		}
-		if (!cine && (g_retryActive || (timed && !g_forcedStart))) countdown_beep(g_buildRemain, g_lastBuildTick);
+		if (!cine && (g_retryActive || (timed && !g_forcedStart))) countdown_beep(g_buildRemain, g_lastBuildTick, 5);
 		else if (!cine) g_lastBuildTick = -1;
 	} else g_lastBuildTick = -1;
 	// round time cap (anti-stall): too long without winning -> DNF this round (counts as a failed finish)
 	if (!cine && g_matched && !g_interRound && g_finishTick < 0 && g_roundStart > 0 && g_roundCapSeconds > 0) {
 		double roundLeft = g_roundCapSeconds - (Time() - g_roundStart);
-		countdown_beep(roundLeft, g_lastRoundTick);   // tick the final 5s of the round clock
+		countdown_beep(roundLeft, g_lastRoundTick, 10);   // tick the final 10s of the round clock
 		if (roundLeft < 0) report_finish(false);
 	} else g_lastRoundTick = -1;
 

@@ -109,9 +109,9 @@ function fakeMod(port: number): Mod {
   // round 2 (A faster again -> best-of-3 decided)
   A.send('finish 90 1 5'); B.send('finish 110 1 6');
   const so = await A.expect((l) => l.startsWith('series '), 'A series_over');
-  if (so === 'series you 2 0') ok('best-of-3 -> A (2-0): ' + so); else if (so) fail('series wrong: ' + so);
+  if (so === 'series you 2 0 0 0 0') ok('best-of-3 -> A (2-0, private/no-elo): ' + so); else if (so) fail('series wrong: ' + so);
   const soB = await B.expect((l) => l.startsWith('series '), 'B series_over');
-  if (soB === 'series opponent 0 2') ok('B sees series loss: ' + soB); else if (soB) fail('B series wrong: ' + soB);
+  if (soB === 'series opponent 0 2 0 0 0') ok('B sees series loss: ' + soB); else if (soB) fail('B series wrong: ' + soB);
 
   // ---- 2) ranked matchmaking queue ----
   C.send('hello carol'); D.send('hello dave');
@@ -147,7 +147,7 @@ function fakeMod(port: number): Mod {
   const dl = await C.expect((l) => l === 'oppleft', 'C sees opponent left', 2000);
   if (dl) ok('opponent_left delivered: ' + dl);
   const dsv = await C.expect((l) => l.startsWith('series '), 'C series_over on disconnect', 2000);
-  if (dsv === 'series you 0 0') ok('disconnect = series win for C: ' + dsv);
+  if (dsv === 'series you 0 0 1 1000 1016') ok('disconnect = ranked series win + elo for C: ' + dsv);
   else if (dsv) fail('disconnect series wrong: ' + dsv);
 
   // ---- ranked: authoritative re-sim handoff (relay -> verifier) ----

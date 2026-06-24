@@ -3,7 +3,8 @@
 // host/join by code, or ranked matchmaking. See docs/net-protocol.md.
 #pragma once
 #include "state.h"
-#include "levels.h"   // load_match_level on auto-load
+#include "levels.h"     // load_match_level on auto-load
+#include "ws_client.h"  // direct WebSocket (ws/wss) transport to the relay
 
 // defined further down (platform socket layer + desync), but used by net_handle just below:
 static void net_sendline(const std::string& s);
@@ -17,6 +18,7 @@ static void net_handle(const std::string& ln) {
 	int gn = sscanf(ln.c_str(), "g %ld %f %f %c %c %d", &t, &x, &y, &eC, &mC, &fl);
 	if (gn >= 3 && strncmp(ln.c_str(), "g ", 2) == 0) { (void)t; if (valid_pos(x, y)) { g_liveX = x; g_liveY = y; g_liveValid = true; if (gn >= 6) { g_liveEmotion = eC; g_liveMotion = mC; g_liveFlip = fl != 0; } } }
 	else if (sscanf(ln.c_str(), "oh %ld %llx %39s", &t, &hh, a) == 3) note_opp_hash(t, (uint64_t)hh, a);
+	else if (sscanf(ln.c_str(), "elo %d", &iv) == 1) g_myElo = iv;   // current ranked rating (idle, for the F6 menu)
 	else if (strncmp(ln.c_str(), "nocontest", 9) == 0) {
 		g_noContest = true; long nt = -1; char rs[24] = { 0 }; sscanf(ln.c_str(), "nocontest %23s %ld", rs, &nt);
 		snprintf(g_roundMsg, sizeof(g_roundMsg), "NO CONTEST (%s) @t%ld - not ranked", rs[0] ? rs : "desync", nt);
@@ -28,7 +30,7 @@ static void net_handle(const std::string& ln) {
 	}
 	else if (sscanf(ln.c_str(), "ob %39s %f %f", a, &x, &y) == 3) { if (valid_pos(x, y)) { if (g_oppBuildReady) { g_oppBuild.clear(); g_oppBuildReady = false; } g_oppBuild.push_back({ a, x, y }); } }
 	else if (strncmp(ln.c_str(), "obend", 5) == 0) g_oppBuildReady = true;
-	else if (sscanf(ln.c_str(), "match %39s %39s %d %d %u", a, b, &rk, &lv, &sd) >= 2) {
+	else if (sscanf(ln.c_str(), "match %39s %39s %d %d %u %d %d", a, b, &rk, &lv, &sd, &g_myElo, &g_oppElo) >= 2) {
 		g_matched = true; g_ranked = rk != 0; g_oppId = b; g_levelIndex = lv; if (sd) g_seed = sd; g_liveValid = false; g_oppBuild.clear(); g_oppBuildReady = false;
 		g_noContest = false; g_desync = false; g_oppHashes.clear();   // fresh match: clear desync state
 		g_seriesOver = false; g_seriesMsg[0] = 0;   // clear the previous series banner
@@ -62,84 +64,31 @@ static void net_handle(const std::string& ln) {
 		g_youWins = yw; g_ghostWins = ow;       // relay is authoritative for the online series score
 		snprintf(g_roundMsg, sizeof(g_roundMsg), "ONLINE round: %s by %s  series %d-%d", w, r, yw, ow);
 	} else if (strncmp(ln.c_str(), "series ", 7) == 0) {
-		char w[16] = { 0 }; int yw = 0, ow = 0; sscanf(ln.c_str() + 7, "%15s %d %d", w, &yw, &ow);
+		char w[16] = { 0 }; int yw = 0, ow = 0, rk = 0, eo = 0, en = 0;
+		sscanf(ln.c_str() + 7, "%15s %d %d %d %d %d", w, &yw, &ow, &rk, &eo, &en);
 		g_youWins = yw; g_ghostWins = ow;
-		g_interRound = false;   // series over: no next level loads, so clear the inter-round overlay/modal suppression
-		snprintf(g_roundMsg, sizeof(g_roundMsg), "SERIES %s  %d-%d (best of 3)", strcmp(w, "you") == 0 ? "WON" : "LOST", yw, ow);
-		snprintf(g_seriesMsg, sizeof(g_seriesMsg), "SERIES %s  %d-%d", strcmp(w, "you") == 0 ? "WON" : "LOST", yw, ow);
-		g_seriesOver = true;    // persistent banner, drawn regardless of screen until the next match
+		g_interRound = false;
+		g_seriesWon = (strcmp(w, "you") == 0);
+		g_eloRanked = rk != 0; g_eloOld = eo; g_eloNew = en;
+		if (g_eloRanked && en > 0) g_myElo = en;   // update the idle rating shown in the menu
+		g_showdownKind = 0; g_pendingShowdown = 0;   // cancel any pending/playing cinematic
+		g_winShow = true; g_winStart = Time(); g_winUntil = Time() + WINSCREEN_SECS;   // win screen, then auto-return to menu
+		PlaySound(g_seriesWon ? "Fanfare" : "Error");
+		g_seriesOver = false; g_seriesMsg[0] = 0;   // replaced by the win screen
 	} else if (strncmp(ln.c_str(), "oppleft", 7) == 0) { g_matched = false; g_liveValid = false; g_interRound = false; snprintf(g_netMsg, sizeof(g_netMsg), "opponent left"); }
 }
 
-#ifdef _WIN32
-// ---- winsock (Windows) ----
-static SOCKET g_sock = INVALID_SOCKET;
-static std::string g_rx;
-static bool g_wsaUp = false;
-static void net_sendline(const std::string& s) {
-	if (g_sock == INVALID_SOCKET) return;
-	std::string l = s + "\n";
-	::send(g_sock, l.data(), (int)l.size(), 0);
-}
-static void net_close() {
-	if (g_sock != INVALID_SOCKET) { ::closesocket(g_sock); g_sock = INVALID_SOCKET; }
-	g_matched = false; g_liveValid = false;
-	if (g_wsaUp) { WSACleanup(); g_wsaUp = false; }
-}
+// ---- transport: a direct WebSocket to the relay (ws:// or wss://); framing/TLS live in ws_client.h.
+// Each line is one WS text frame (no newline). net_handle is the per-frame callback. ----
+static void net_sendline(const std::string& s) { wsc_send_text(s); }
+static void net_close() { wsc_close(); g_matched = false; g_liveValid = false; }
+static bool net_up() { return wsc_up(); }
+static void net_poll() { wsc_poll(net_handle); }
 static bool net_connect() {
-	if (!g_wsaUp) { WSADATA w; if (WSAStartup(MAKEWORD(2, 2), &w) != 0) return false; g_wsaUp = true; }
-	g_sock = ::socket(AF_INET, SOCK_STREAM, 0);
-	if (g_sock == INVALID_SOCKET) return false;
-	sockaddr_in a; memset(&a, 0, sizeof(a));
-	a.sin_family = AF_INET; a.sin_port = htons((u_short)g_bridgePort);
-	if (InetPtonA(AF_INET, g_bridgeHost.c_str(), &a.sin_addr) != 1 || ::connect(g_sock, (sockaddr*)&a, sizeof(a)) != 0) {
-		::closesocket(g_sock); g_sock = INVALID_SOCKET; return false;
-	}
-	u_long nb = 1; ioctlsocket(g_sock, FIONBIO, &nb);   // non-blocking after the (blocking) localhost connect
-	net_sendline("hello " + g_playerId);
+	if (!wsc_connect(g_relayUrl)) return false;
+	wsc_send_text("hello " + g_playerUuid + " " + g_playerId);
 	return true;
 }
-static void net_poll() {
-	if (g_sock == INVALID_SOCKET) return;
-	char buf[1024]; int n;
-	while ((n = ::recv(g_sock, buf, sizeof(buf), 0)) > 0) {
-		g_rx.append(buf, (size_t)n);
-		size_t p; while ((p = g_rx.find('\n')) != std::string::npos) { net_handle(g_rx.substr(0, p)); g_rx.erase(0, p + 1); }
-	}
-}
-static bool net_up() { return g_sock != INVALID_SOCKET; }
-#else
-// ---- POSIX sockets (Linux) ----
-static int g_sock = -1;
-static std::string g_rx;
-static void net_sendline(const std::string& s) {
-	if (g_sock < 0) return;
-	std::string l = s + "\n";
-	(void)::send(g_sock, l.data(), l.size(), MSG_NOSIGNAL | MSG_DONTWAIT);
-}
-static void net_close() { if (g_sock >= 0) ::close(g_sock); g_sock = -1; g_matched = false; g_liveValid = false; }
-static bool net_connect() {
-	g_sock = ::socket(AF_INET, SOCK_STREAM, 0);
-	if (g_sock < 0) return false;
-	sockaddr_in a; memset(&a, 0, sizeof(a));
-	a.sin_family = AF_INET; a.sin_port = htons((uint16_t)g_bridgePort);
-	if (inet_pton(AF_INET, g_bridgeHost.c_str(), &a.sin_addr) != 1 || ::connect(g_sock, (sockaddr*)&a, sizeof(a)) < 0) {
-		::close(g_sock); g_sock = -1; return false;
-	}
-	int fl = fcntl(g_sock, F_GETFL, 0); fcntl(g_sock, F_SETFL, fl | O_NONBLOCK);
-	net_sendline("hello " + g_playerId);
-	return true;
-}
-static void net_poll() {
-	if (g_sock < 0) return;
-	char buf[1024]; ssize_t n;
-	while ((n = ::recv(g_sock, buf, sizeof(buf), MSG_DONTWAIT)) > 0) {
-		g_rx.append(buf, (size_t)n);
-		size_t p; while ((p = g_rx.find('\n')) != std::string::npos) { net_handle(g_rx.substr(0, p)); g_rx.erase(0, p + 1); }
-	}
-}
-static bool net_up() { return g_sock >= 0; }
-#endif
 
 // adopt the player's active vanilla Eets profile name as the online identity (falls back to the
 // configured id when no profile is selected yet - e.g. at startup before the player picks one). Re-sends
@@ -164,7 +113,7 @@ static void refresh_player_id() {
 	std::string nm = net_safe_id(Profile_GetName());
 	if (nm.empty() || nm == g_playerId) return;
 	g_playerId = nm;
-	if (net_up()) net_sendline("hello " + g_playerId);
+	if (net_up()) net_sendline("hello " + g_playerUuid + " " + g_playerId);
 }
 
 // set the online name from the F6 menu. Empty input clears the override -> revert to the vanilla profile
@@ -173,7 +122,7 @@ static void set_player_name(const std::string& raw) {
 	std::string nm = net_safe_id(raw);
 	if (nm.empty()) { g_nameManual = false; SaveSet(MOD, "player_id", ""); refresh_player_id(); return; }
 	g_nameManual = true; g_playerId = nm; SaveSet(MOD, "player_id", nm.c_str());
-	if (net_up()) net_sendline("hello " + g_playerId);
+	if (net_up()) net_sendline("hello " + g_playerUuid + " " + g_playerId);
 }
 
 // leave the current match: dropping the connection is a forfeit (the relay awards the remaining player the
@@ -186,13 +135,13 @@ static void forfeit_match() {
 	World_StartMainMenu();               // leave the level back to the main menu
 	refresh_player_id();                 // re-resolve name in case the profile changed
 	if (net_connect()) snprintf(g_netMsg, sizeof(g_netMsg), "left the match");
-	else snprintf(g_netMsg, sizeof(g_netMsg), "left - bridge offline");
+	else snprintf(g_netMsg, sizeof(g_netMsg), "left - server offline");
 }
 
 // connect on demand, then send a command line to the bridge
 static void net_action(const std::string& cmd) {
 	refresh_player_id();   // use the freshest profile name for host/queue/join (and re-hello if it changed)
-	if (!net_up()) { if (!net_connect()) { snprintf(g_netMsg, sizeof(g_netMsg), "bridge offline (%s:%d)", g_bridgeHost.c_str(), g_bridgePort); return; } }
+	if (!net_up()) { if (!net_connect()) { snprintf(g_netMsg, sizeof(g_netMsg), "can't reach server (%s)", g_relayUrl.c_str()); return; } }
 	net_sendline(cmd);
 }
 
