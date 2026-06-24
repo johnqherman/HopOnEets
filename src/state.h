@@ -26,28 +26,23 @@
 #endif
 using namespace Eets;
 
-// ---- config (seeded from hop_on_eets.cfg; edited live in the F6 menu, persisted via SaveSet) ----
+// ---- fixed constants + a few hidden dev/deployment knobs (read from config if present, but absent from
+//      the shipped hop_on_eets.cfg so end users never see them; nothing is user-tunable in-game) ----
 static const char* MOD = "hop_on_eets";
-static int  TICK_RATE     = 60;
-static bool g_autoRecord  = true;
-static bool g_pinSeed     = false;
-static int  HASH_INTERVAL = 30;
+// ---- fixed competitive constants (same for every player; not configurable) ----
+static constexpr int TICK_RATE     = 60;     // engine fixed timestep (Hz)
+static constexpr int HASH_INTERVAL = 30;     // desync state-hash cadence (ticks)
+static constexpr bool g_autoRecord = true;   // always record the run (ranked replay submission needs it)
+static constexpr bool g_autoLoad   = true;   // always auto-load the matched level + ready-up
+static bool g_pinSeed     = false;           // solo determinism self-test only (cfg pin_seed; matches always pin via g_matched)
 static uint32_t g_seed    = 123456789u;
-static std::string g_ghostFile;             // explicit opponent ghost (cfg); empty = practice
-static std::string g_ghostAnim;             // .anim drawn (animated, semi-transparent) as the ghost
-static bool g_showGhost   = true;
-// real Eets-character .anim paths (from Data/Animations/Eets/ - split by emotion x motion, no single
-// "eets.anim"). Cycle them from the F6 menu; the walk cycle is the default. Last "" = drawn-marker fallback.
-static const char* GHOST_ANIM_CANDIDATES[] = {
-	"DATA:Animations/Eets/eets_happy_walk.anim",
-	"DATA:Animations/Eets/eets_happy_jump.anim",
-	"DATA:Animations/Eets/eets_happy_fall.anim",
-	"DATA:Animations/Eets/eets_angry_walk.anim",
-	"",
-};
-static int g_ghostAnimIdx = 0;
+static bool g_showGhost   = true;            // head-to-head: the opponent is always drawn
+// the opponent's static-fallback sprite (the live ghost picks a per-emotion/motion .anim at draw time)
+static const std::string g_ghostAnim = "DATA:Animations/Eets/eets_happy_walk.anim";
+static std::string g_ghostFile;              // dormant solo-replay ghost path (no longer configurable)
 static const int GHOST_ALPHA = 120;          // ghost transparency tint (0..255)
-static bool g_autoLoad = true;               // auto-load the matched level + ready-up on match
+// player name cap = the vanilla "ENTER YOUR NAME" field's enforced limit (12 chars)
+static constexpr int MAX_PLAYER_NAME = 12;
 
 // ---- match / phase ----
 enum Phase { IDLE, BUILD, SIM };
@@ -57,6 +52,8 @@ static bool  g_interRound   = false;   // round just finished, waiting for the n
 static bool  g_matchActive = false;
 static bool  g_menuOpen    = false;
 static long  g_tick        = 0;
+static long  g_engineTickBase = -1;    // engine sim-tick counter at sim start; g_tick = Engine_GetSimTick() - this (-1 = counter unavailable -> g_tick++ fallback)
+static long  g_lastHashBucket = -1;    // last sampled hash bucket (g_tick / HASH_INTERVAL); sample on bucket change so a tick jump (engine sub-step) can't skip a sample and misalign the determinism compare
 static int   g_resets      = 0;
 static long  g_finishTick  = -1;
 static int   g_replayCounter = 0, g_roundCounter = 0;
@@ -96,6 +93,18 @@ static char  g_liveEmotion = 'h';   // h/a/s = happy/angry/scared
 static char  g_liveMotion  = 'w';   // w/j/f/s = walk/jump/fall/squat
 static bool  g_liveFlip    = false; // facing (mirrored)
 static bool g_codeEntry = false; static std::string g_codeBuf;   // in-menu join-code entry
+static bool g_nameEntry = false; static std::string g_nameBuf;   // in-menu online-name entry
+static bool g_confirmForfeit = false;   // two-step guard on the leave-&-forfeit button
+static bool g_nameManual = false;   // true once the player types a custom name (overrides the vanilla profile name; persisted as save key player_id)
+// pre-match / between-round showdown overlay (cinematic beat so round starts feel less abrupt)
+static int    g_showdownKind     = 0;   // 0=none, 1=match-start (VS + two Eets), 2=between-rounds (ROUND N)
+static int    g_showdownRound    = 0;
+static int    g_pendingShowdown  = 0;   // set on match/round; consumed at the synced countdown (build start) so both clients show it together
+static double g_showdownUntil    = 0.0;
+static constexpr double SHOWDOWN_SECS_MATCH = 6.5;   // opening VS cinematic length
+static constexpr double SHOWDOWN_SECS_ROUND = 4.5;   // between-rounds cinematic length
+static int    g_lastBuildTick    = -1;  // last whole-second beeped on the build/retry countdown (sub-6s tick sfx)
+static int    g_lastRoundTick    = -1;  // last whole-second beeped on the round clock
 
 // ---- checkpoint state-hash exchange (same-platform desync detection; spec Part 10) ----
 #ifdef _WIN32
@@ -127,7 +136,7 @@ struct GBuild { std::string bp; float x, y; };                   // opponent's l
 static std::vector<GBuild> g_oppBuild; static bool g_oppBuildReady = false;
 
 // ---- forced build timer ----
-static int    g_buildSeconds = 45; static float g_buildSecF = 45.0f;
+static int    g_buildSeconds = 45;             // default match build time; the relay re-syncs both clients via the countdown signal
 static int    g_deaths      = 0;       // Eets deaths this round (match): a death resets to build, not a round loss; tiebreaker
 static long   g_deathTicks  = 0;       // sim ticks spent in failed (died) attempts this round - added to finish_tick (time penalty)
 static bool   g_deathReset  = false;   // a death is pending a reset-to-build (handled next Update, off the engine's death call stack)
@@ -137,11 +146,11 @@ static bool   g_seriesOver   = false;  // a series just ended: show the result b
 static char   g_seriesMsg[160] = "";   // the persistent series-result text
 static bool   g_retryActive = false;   // in a post-death retry build: a local shot clock runs, then auto-Go
 static double g_retryStart  = 0.0;     // Time() when the current retry build began
-static int    g_retrySeconds = 30; static float g_retrySecF = 30.0f;   // retry shot clock (cfg retry_seconds)
+static constexpr int g_retrySeconds = 30;      // retry shot clock seconds (fixed)
 static double g_roundStart  = 0.0;     // Time() at round start (countdown); basis for the total round-time cap
 static double g_buildRemain = 0.0;     // seconds left on the active build/retry clock (set by match_update, drawn by the HUD)
-static int    g_roundCapSeconds = 180; static float g_roundCapF = 180.0f;   // total round wall-clock cap -> DNF (cfg round_cap_seconds)
-static int    g_hubIntroSkip = 1;  static float g_hubIntroSkipF = 1.0f;  // intro levels skipped per hub
+static int    g_roundCapSeconds = 180;         // total round wall-clock cap -> DNF; relay re-syncs it via the countdown signal
+static constexpr int g_hubIntroSkip = 1;   // ranked pool: intro levels skipped per hub (fixed)
 static double g_buildStart = 0.0; static bool g_forcedStart = false;
 
 static bool in_level() { return !World_IsInMainMenu() && !World_IsInLevelEditor(); }

@@ -73,6 +73,15 @@ static void match_on_event(const char* name, void* a, void* b) {
 	}
 }
 
+// beep once per whole second on the final 5s of a countdown (5,4,3,2,1). `last` tracks the last second
+// announced so it fires once per tick; reset to -1 whenever the countdown is outside the (0,6) window.
+static void countdown_beep(double remain, int& last) {
+	if (remain > 0.0 && remain < 6.0) {
+		int s = (int)remain; if (remain > (double)s) s++;   // ceil for positive = seconds remaining
+		if (s >= 1 && s <= 5 && s != last) { last = s; PlaySound("GUI Click 2"); }
+	} else last = -1;
+}
+
 // per-frame match state machine (build timer, retry shot clock, round cap, early-Go block, speed/button lock,
 // pos/hash streaming, DNF watchdog). Sets g_buildRemain for the HUD. Does NOT draw.
 static void match_update() {
@@ -95,6 +104,7 @@ static void match_update() {
 	bool inMatch = (g_matched || g_matchActive);
 	bool timed   = g_buildSeconds > 0 && inMatch;
 	bool simulating = World_IsSimulating();
+	bool cine    = (g_showdownKind != 0 && Time() < g_showdownUntil);   // an opening/round cinematic is playing
 
 	// block an early "Go": in a match the sim may only start when the synced build timer fires. If the
 	// player presses Go before that, revert to build (Creator::StopSimulation restores the snapshot).
@@ -110,19 +120,26 @@ static void match_update() {
 	else if (g_phase == SIM && !simulating && g_finishTick < 0) { g_phase = BUILD; snprintf(g_status, sizeof(g_status), "build"); }
 
 	if (g_phase == BUILD && inMatch) {
-		if (g_retryActive) {   // retry shot clock (local, per-player): auto-Go at 0; early manual Go allowed (g_forcedStart already set)
+		if (cine) {   // freeze the build/retry countdown while the cinematic plays (pin the start each frame)
+			g_buildStart = Time(); g_retryStart = Time();
+			g_buildRemain = g_retryActive ? g_retrySeconds : g_buildSeconds;
+			g_lastBuildTick = -1;
+		} else if (g_retryActive) {   // retry shot clock (local, per-player): auto-Go at 0; early manual Go allowed (g_forcedStart already set)
 			g_buildRemain = g_retrySeconds - (Time() - g_retryStart);
 			if (g_buildRemain <= 0) { g_retryActive = false; force_start_sim(); }
 		} else if (timed && !g_forcedStart) {   // initial synced build: auto-Go at 0 (early Go blocked above)
 			g_buildRemain = g_buildSeconds - (Time() - g_buildStart);
 			if (g_buildRemain <= 0) { g_forcedStart = true; force_start_sim(); }
 		}
-	}
+		if (!cine && (g_retryActive || (timed && !g_forcedStart))) countdown_beep(g_buildRemain, g_lastBuildTick);
+		else if (!cine) g_lastBuildTick = -1;
+	} else g_lastBuildTick = -1;
 	// round time cap (anti-stall): too long without winning -> DNF this round (counts as a failed finish)
-	if (g_matched && !g_interRound && g_finishTick < 0 && g_roundStart > 0 && g_roundCapSeconds > 0
-	    && (Time() - g_roundStart) > g_roundCapSeconds) {
-		report_finish(false);
-	}
+	if (!cine && g_matched && !g_interRound && g_finishTick < 0 && g_roundStart > 0 && g_roundCapSeconds > 0) {
+		double roundLeft = g_roundCapSeconds - (Time() - g_roundStart);
+		countdown_beep(roundLeft, g_lastRoundTick);   // tick the final 5s of the round clock
+		if (roundLeft < 0) report_finish(false);
+	} else g_lastRoundTick = -1;
 
 	if (g_phase == SIM && simulating && !World_IsPaused()) {
 		Object* e = World_GetEets();
@@ -134,7 +151,8 @@ static void match_update() {
 					char pb[80]; snprintf(pb, sizeof(pb), "pos %ld %.1f %.1f %c %c %d", g_tick, ep.x, ep.y, emo, mot, flip);
 					net_sendline(pb);
 				}
-				if (g_tick % HASH_INTERVAL == 0) {
+				if (g_tick / HASH_INTERVAL > g_lastHashBucket) {   // one sample per interval bucket (jump-proof; == g_tick%==0 when ticks step by 1)
+					g_lastHashBucket = g_tick / HASH_INTERVAL;
 					uint64_t hh = state_hash();
 					g_samples.push_back({ g_tick, ep.x, ep.y, hh });
 					if (g_matched) {   // stream the checkpoint for same-platform desync detection
@@ -144,7 +162,11 @@ static void match_update() {
 				}
 			}
 		}
-		g_tick++;
+		// Advance the round tick from the TRUE engine sim-tick (count of deterministic frame advances since
+		// sim start) when the counter is available - catches engine sub-stepping a per-Update ++ would miss
+		// and keeps the desync-hash tick aligned with the engine. Fall back to ++ if the counter is unreadable.
+		long et = Engine_GetSimTick();
+		g_tick = (et >= 0 && g_engineTickBase >= 0) ? (et - g_engineTickBase) : (g_tick + 1);
 		// DNF watchdog (match only): a sim that neither completes nor kills the Eets must still resolve
 		// the round, or the relay waits forever. begin_sim resets g_tick, so this is per round.
 		if (g_matched && g_finishTick < 0 && g_tick > g_simMaxTicks) report_finish(false);

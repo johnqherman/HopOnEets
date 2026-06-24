@@ -28,7 +28,6 @@ static bool load_ghost(const std::string& path) {
 	if (g_haveGhost) Eets::Log("hop_on_eets: loaded ghost %s (%zu samples, finish=%ld)", path.c_str(), g_ghost.size(), g_ghostFinish);
 	return g_haveGhost;
 }
-static void clear_ghost() { g_ghost.clear(); g_ghostFinish = -1; g_haveGhost = false; set_ghost_label(); }
 static void write_ghost(int idx, bool completed) {
 	char path[128]; snprintf(path, sizeof(path), "Log/hop_on_eets_ghost_%03d.txt", idx);
 	FILE* f = fopen(path, "w"); if (!f) return;
@@ -159,6 +158,8 @@ static void begin_build() {
 }
 static void begin_sim(bool fromReset) {
 	g_phase = SIM; g_tick = 0; g_finishTick = -1; g_retryActive = false;   // sim started: retry clock no longer applies
+	g_engineTickBase = Engine_GetSimTick();   // baseline the true engine sim-tick; subsequent g_tick = counter - this
+	g_lastHashBucket = -1;                     // restart hash-sample bucketing for this run
 	if (g_matched && g_roundStart == 0.0) g_roundStart = Time();   // round/cap clock starts at the FIRST Go (after build), per round
 	std::vector<uint64_t> seq; seq.reserve(g_samples.size());
 	for (auto& s : g_samples) seq.push_back(s.hash);

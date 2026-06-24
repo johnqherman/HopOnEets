@@ -17,9 +17,10 @@
 // framework treats render coords as world coords (spawner places at the cursor) - so world position
 // == on-screen position here. Scrolling/zoomed levels would need the GFX view matrix (FUN_0048f2c0).
 //
-// Scaffold limits (also in the spec): "tick" is a sim-frame counter (speed locked) until the true
-// engine tick hook (clock subsys DAT_00ee3ca0 / step counter _DAT_00ee3da4); Linux seed/det-mode
-// globals and Windows online (winsock) are follow-ups.
+// "tick" tracks the TRUE engine sim-tick (Engine_GetSimTick = Simulator::DeterministicFrameAdvance's
+// free-running step counter, minus a per-round baseline taken at sim start); it falls back to counting
+// mod Update calls only if the counter address is unavailable. Reading the real counter keeps the
+// desync-hash tick aligned with the engine and catches sub-stepping a per-Update ++ would miss.
 #ifdef _WIN32
 #include <winsock2.h>    // must precede any windows.h in the TU (eetsmod.h pulls windows.h)
 #include <ws2tcpip.h>
@@ -39,28 +40,18 @@
 #include "src/hud.h"        // all in-game overlay drawing
 
 extern "C" void EetsMod_Init() {
-	// settings live in the F6 menu and persist via SaveSet; .cfg only seeds first-run defaults
+	// Almost everything is a fixed competitive constant (see state.h); the shipped .cfg exposes nothing
+	// tunable to end users. Only these hidden dev/deployment knobs are still read from config (absent from
+	// the .cfg, so not shown - a dev can still set them in the save file), plus the env-driven re-sim args.
 	auto cfgI = [](const char* k, int d) { return SaveGetInt(MOD, k, ConfigGetInt(MOD, k, d)); };
 	auto cfgS = [](const char* k, const char* d) { const char* v = SaveGet(MOD, k, ConfigGet(MOD, k, d)); return std::string(v ? v : d); };
-	TICK_RATE      = cfgI("tick_rate", 60);
-	g_autoRecord   = cfgI("auto_record", 1) != 0;
-	g_pinSeed      = cfgI("pin_seed", 0) != 0;
-	g_showGhost    = cfgI("show_ghost", 1) != 0;
-	HASH_INTERVAL  = cfgI("hash_interval", 30); if (HASH_INTERVAL < 1) HASH_INTERVAL = 1;
-	g_buildSeconds = cfgI("build_seconds", 45); g_buildSecF = (float)g_buildSeconds;
-	g_retrySeconds = cfgI("retry_seconds", 30); g_retrySecF = (float)g_retrySeconds;
-	g_roundCapSeconds = cfgI("round_cap_seconds", 180); g_roundCapF = (float)g_roundCapSeconds;
-	g_hubIntroSkip = cfgI("hub_intro_skip", 1); g_hubIntroSkipF = (float)g_hubIntroSkip;
-	g_online       = cfgI("online", 0) != 0;
-	g_autoLoad     = cfgI("auto_load_level", 1) != 0;
+	g_online       = true;                       // always-on multiplayer (forced off below for the headless re-sim verifier)
+	g_pinSeed      = cfgI("pin_seed", 0) != 0;   // solo determinism self-test (Phase C); matches always pin via g_matched
+	g_bridgeHost   = cfgS("bridge_host", "127.0.0.1");   // where the local relay bridge listens
 	g_bridgePort   = cfgI("bridge_port", 38600);
-	g_ghostFile    = cfgS("ghost_file", "");
-	g_ghostAnim    = cfgS("ghost_anim", GHOST_ANIM_CANDIDATES[0]);   // default: animated Eets ghost
-	for (int i = 0; i < (int)(sizeof(GHOST_ANIM_CANDIDATES) / sizeof(*GHOST_ANIM_CANDIDATES)); ++i)
-		if (g_ghostAnim == GHOST_ANIM_CANDIDATES[i]) g_ghostAnimIdx = i;
-	g_bridgeHost   = cfgS("bridge_host", "127.0.0.1");
-	g_playerId     = cfgS("player_id", "p1");
-	if (!g_ghostFile.empty()) load_ghost(g_ghostFile);
+	const char* savedName = SaveGet(MOD, "player_id", nullptr);   // a custom name set via the F6 menu (persisted)
+	g_nameManual   = (savedName && *savedName);
+	g_playerId     = g_nameManual ? net_safe_id(savedName) : std::string("p1");   // else "p1" until the profile name is adopted below
 	// re-sim is parameterized by env first (the headless launcher sets these per run), then cfg
 	const char* envFile = getenv("HOE_RESIM_FILE"); const char* envLvl = getenv("HOE_RESIM_LEVEL");
 	const char* envExit = getenv("HOE_RESIM_EXIT");
@@ -68,18 +59,25 @@ extern "C" void EetsMod_Init() {
 	g_resimLevel = envLvl ? atoi(envLvl) : cfgI("resim_level", -1);
 	g_resimExit  = envExit ? atoi(envExit) != 0 : cfgI("resim_exit", 1) != 0;
 	if (!g_resimFile.empty() && resim_parse(g_resimFile)) {   // batch verifier: re-sim an input log, write a verdict
-		g_resimState = RS_INIT; g_matchActive = true;
+		g_resimState = RS_INIT; g_matchActive = true; g_online = false;   // headless verifier runs offline - no relay
 		Eets::Log("hop_on_eets: RESIM mode - re-simulating %s (headless verifier, exit_on_done=%d)", g_resimFile.c_str(), g_resimExit ? 1 : 0);
 	}
-	if (g_online && net_connect()) snprintf(g_netMsg, sizeof(g_netMsg), "connected as %s", g_playerId.c_str());
-	Eets::Log("hop_on_eets: ready (tick=%d build=%ds ghost=%s online=%d) - F6 opens the menu (all settings live there)",
-	          TICK_RATE, g_buildSeconds, g_haveGhost ? "yes" : "no", g_online ? 1 : 0);
+	refresh_player_id();   // adopt the vanilla profile name if one is already active at load
+	if (g_online && net_connect()) g_netMsg[0] = 0;   // connected: clear the default "offline" (identity shows as "User: <name>")
+	Eets::Log("hop_on_eets: ready (tick=%d build=%ds online=%d) - F6 opens the match menu",
+	          TICK_RATE, g_buildSeconds, g_online ? 1 : 0);
 }
 
 extern "C" void EetsMod_OnMouse(int x, int y, int button, int down) { UI::FeedMouse(x, y, button, down); }
 
 extern "C" void EetsMod_OnText(const char* utf8) {
-	if (!g_codeEntry || !utf8) return;
+	if (!utf8) return;
+	if (g_nameEntry) {   // online-name entry: any printable non-space ASCII, capped at the name limit
+		for (const char* p = utf8; *p; ++p)
+			if ((unsigned char)*p > ' ' && (unsigned char)*p < 0x7f && (int)g_nameBuf.size() < MAX_PLAYER_NAME) g_nameBuf.push_back(*p);
+		return;
+	}
+	if (!g_codeEntry) return;
 	for (const char* p = utf8; *p; ++p) {
 		char ch = *p;
 		if (ch >= 'a' && ch <= 'z') ch = (char)(ch - 'a' + 'A');
@@ -94,6 +92,11 @@ extern "C" void EetsMod_OnEvent(const char* name, void* a, void* b) { match_on_e
 extern "C" void EetsMod_OnKey(int key, int mods, int down) {
 	if (!down) return;
 	if (key == EKEY_F6) { g_menuOpen = !g_menuOpen; return; }
+	if (g_nameEntry) {
+		if (key == EKEY_BACKSPACE) { if (!g_nameBuf.empty()) g_nameBuf.pop_back(); return; }
+		if (key == EKEY_RETURN)    { set_player_name(g_nameBuf); g_nameEntry = false; StopTextInput(); return; }
+		if (key == EKEY_ESCAPE)    { g_nameEntry = false; StopTextInput(); return; }
+	}
 	if (g_codeEntry) {
 		if (key == EKEY_BACKSPACE) { if (!g_codeBuf.empty()) g_codeBuf.pop_back(); return; }
 		if (key == EKEY_RETURN)    { g_codeEntry = false; StopTextInput(); if (!g_codeBuf.empty()) net_action("join " + g_codeBuf); return; }

@@ -4,6 +4,35 @@
 #pragma once
 #include "state.h"
 
+// cinematic showdown overlay: letterbox bars wipe in/out, with either a VS face-off (match start) or a
+// "ROUND N" card (between rounds). Driven by g_showdownUntil; self-clears when the timer elapses. Drawn
+// only in the safe window (in-level, not mid-transition) - see the call site in draw_hud.
+static void draw_showdown() {
+	if (g_showdownKind == 0) return;
+	double now = Time();
+	if (now >= g_showdownUntil) { g_showdownKind = 0; return; }
+	double dur = (g_showdownKind == 1 ? SHOWDOWN_SECS_MATCH : SHOWDOWN_SECS_ROUND);
+	double t = 1.0 - (g_showdownUntil - now) / dur; if (t < 0) t = 0; if (t > 1) t = 1;
+	int sw = ScreenWidth(), sh = ScreenHeight(), cy = sh / 2;
+	double f = (t < 0.15) ? (t / 0.15) : (t > 0.85 ? (1.0 - t) / 0.15 : 1.0);   // bars wipe in, hold, wipe out
+	int barH = (int)(sh * 0.16 * f);
+	if (barH > 0) { FillRect(0, 0, sw, barH, Color(0, 0, 0, 255)); FillRect(0, sh - barH, sw, barH, Color(0, 0, 0, 255)); }
+	Color yellow(255, 232, 40, 255), white(255, 255, 255, 255);
+	if (g_showdownKind == 1) {                       // match start: two big Eets standing at the screen edges
+		const float S = 5.5f; const int sz = (int)(64 * S), half = sz / 2, margin = 10;   // dt=0 -> frozen pose (standing, not walking)
+		if (!g_ghostAnim.empty()) {
+			DrawAnim(g_ghostAnim.c_str(), margin,           cy - half, 0.0f, 0.0f, white, false, S);   // left edge, faces center
+			DrawAnim(g_ghostAnim.c_str(), sw - sz - margin, cy - half, 0.0f, 0.0f, white, true,  S);    // right edge, mirrored to face center
+		}
+		DrawTextOutlined(sw / 2 - 18, cy - 18, "VS", FONT_BIG, yellow);
+		DrawTextOutlined(margin,           cy - half - 28, g_playerId.c_str(), FONT_NORMAL, Color(150, 220, 255, 255));
+		DrawTextOutlined(sw - sz - margin, cy - half - 28, g_oppId.c_str(),    FONT_NORMAL, Color(255, 160, 120, 255));
+	} else {                                         // between rounds: a quick ROUND N card
+		char rt[32]; snprintf(rt, sizeof(rt), "ROUND %d", g_showdownRound);
+		DrawTextOutlined(sw / 2 - (int)strlen(rt) * 8, cy - 18, rt, FONT_BIG, yellow);
+	}
+}
+
 static void draw_hud() {
 	if (in_level()) {
 		bool inMatch = (g_matched || g_matchActive);
@@ -37,6 +66,7 @@ static void draw_hud() {
 			}
 			if (g_roundMsg[0]) DrawTextOutlined(10, 74, g_roundMsg, FONT_NORMAL, Color(255, 255, 255, 255));
 			if (g_desync || g_noContest) { char db[80]; snprintf(db, sizeof(db), g_noContest ? "NO CONTEST (desync) - not ranked" : "DESYNC @t%ld - result withheld", g_desyncTick); DrawTextOutlined(10, 92, db, FONT_NORMAL, Color(255, 90, 80, 255)); }
+			draw_showdown();   // cinematic beat on top of the build phase (match start / round change)
 		}   // end !g_interRound overlay
 	}
 
