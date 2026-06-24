@@ -88,6 +88,7 @@ static std::string g_oppId = "?";
 static int g_levelIndex = -1;                // ranked level index from the relay (resolved % pool size)
 static char g_netMsg[96] = "offline";
 static bool  g_liveValid = false; static float g_liveX = 0, g_liveY = 0;
+static double g_liveLastTime = 0.0;   // Time() of the last opponent pos frame; the ghost only draws while fresh (else a round-end leaves it lingering at the last spot)
 // opponent's live anim state, streamed with each pos frame, so the ghost mirrors their Eets exactly
 static char  g_liveEmotion = 'h';   // h/a/s = happy/angry/scared
 static char  g_liveMotion  = 'w';   // w/j/f/s = walk/jump/fall/squat

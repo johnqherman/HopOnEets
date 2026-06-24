@@ -41,7 +41,9 @@ static std::string live_anim_path() {
 static void draw_ghost(float dt) {
 	if (!g_showGhost) return;
 	float gx, gy;
-	bool live = (g_matched && g_liveValid);        // realtime opponent takes priority over a recorded ghost
+	// realtime opponent (takes priority over a recorded ghost), but only while frames are fresh - once they
+	// stop streaming (their round ended / they're not simulating) the ghost clears instead of lingering.
+	bool live = (g_matched && g_liveValid && (Time() - g_liveLastTime) < 0.4);
 	if (live) { gx = g_liveX; gy = g_liveY; }
 	else if (!g_haveGhost || !ghost_pos_at(g_tick, gx, gy)) return;
 	if (!valid_pos(gx, gy)) return;                // garbage guard

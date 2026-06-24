@@ -16,7 +16,7 @@ static void net_handle(const std::string& ln) {
 	char a[40] = { 0 }, b[40] = { 0 }; long t; float x, y; int rk = 0, iv = 0, lv = -1, cap = 0; unsigned sd = 0; unsigned long long hh = 0;
 	char eC = 0, mC = 0; int fl = 0;
 	int gn = sscanf(ln.c_str(), "g %ld %f %f %c %c %d", &t, &x, &y, &eC, &mC, &fl);
-	if (gn >= 3 && strncmp(ln.c_str(), "g ", 2) == 0) { (void)t; if (valid_pos(x, y)) { g_liveX = x; g_liveY = y; g_liveValid = true; if (gn >= 6) { g_liveEmotion = eC; g_liveMotion = mC; g_liveFlip = fl != 0; } } }
+	if (gn >= 3 && strncmp(ln.c_str(), "g ", 2) == 0) { (void)t; if (valid_pos(x, y)) { g_liveX = x; g_liveY = y; g_liveValid = true; g_liveLastTime = Time(); if (gn >= 6) { g_liveEmotion = eC; g_liveMotion = mC; g_liveFlip = fl != 0; } } }
 	else if (sscanf(ln.c_str(), "oh %ld %llx %39s", &t, &hh, a) == 3) note_opp_hash(t, (uint64_t)hh, a);
 	else if (sscanf(ln.c_str(), "elo %d", &iv) == 1) g_myElo = iv;   // current ranked rating (idle, for the F6 menu)
 	else if (strncmp(ln.c_str(), "nocontest", 9) == 0) {
