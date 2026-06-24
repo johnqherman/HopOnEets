@@ -6,13 +6,13 @@ automatic HTTPS so clients connect over `wss://`.
 ## One-time setup
 
 1. Install Docker + the compose plugin on the VPS.
-2. Point a DNS **A record** for your domain (e.g. `play.example.com`) at the VPS public IP.
+2. Point a DNS **A record** for your domain (e.g. `hoe.raccoonlagoon.com`) at the VPS public IP.
 3. Open ports **80** and **443** (Caddy needs 80 for the ACME challenge, 443 for wss).
 4. Copy the netproto/ directory to the VPS, then:
 
    ```sh
    cp .env.example .env
-   $EDITOR .env            # set DOMAIN=play.example.com
+   $EDITOR .env            # set DOMAIN=hoe.raccoonlagoon.com
    docker compose up -d --build
    ```
 

@@ -80,7 +80,7 @@ static std::string g_ghostLabel = "none";
 
 // ---- realtime net ----
 static bool g_online = false;
-static std::string g_relayUrl = "wss://hoponeets.raccoonlagoon.com";   // direct relay endpoint (ws:// or wss://); override via cfg relay_url
+static std::string g_relayUrl = "wss://hoe.raccoonlagoon.com";   // direct relay endpoint (ws:// or wss://); override via cfg relay_url
 static std::string g_playerId = "p1";        // display name (editable; profile name by default) - NOT the identity
 static std::string g_playerUuid;              // stable client-generated id (the Elo identity; persisted, never changes)
 static bool g_matched = false, g_ranked = false;

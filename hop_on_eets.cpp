@@ -61,7 +61,7 @@ extern "C" void EetsMod_Init() {
 	g_playerUuid   = cfgS("player_uuid", "");    // stable Elo identity; generated once per install, then persisted
 	if (g_playerUuid.empty()) { g_playerUuid = gen_uuid(); SaveSet(MOD, "player_uuid", g_playerUuid.c_str()); }
 	g_pinSeed      = cfgI("pin_seed", 0) != 0;   // solo determinism self-test (Phase C); matches always pin via g_matched
-	g_relayUrl     = cfgS("relay_url", "wss://hoponeets.raccoonlagoon.com");   // direct relay endpoint (ws:// local, wss:// prod)
+	g_relayUrl     = cfgS("relay_url", "wss://hoe.raccoonlagoon.com");   // direct relay endpoint (ws:// local, wss:// prod)
 	const char* savedName = SaveGet(MOD, "player_id", nullptr);   // a custom name set via the F6 menu (persisted)
 	g_nameManual   = (savedName && *savedName);
 	g_playerId     = g_nameManual ? net_safe_id(savedName) : std::string("p1");   // else "p1" until the profile name is adopted below
