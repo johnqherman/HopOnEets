@@ -31,9 +31,10 @@ static void draw_showdown() {
 		DrawTextOutlined(rcx - (int)strlen(rn) * 8, nameY, rn, FONT_BIG, Color(255, 160, 120, 255));
 	} else {                                         // between rounds: who won, then the ROUND N card
 		if (g_lastRoundWin != 0) {
+			int prev = g_showdownRound - 1;   // the round just won (the card shows the upcoming round)
 			char wl[48];
-			if (g_lastRoundWin > 0) snprintf(wl, sizeof(wl), "You won the round");
-			else                    snprintf(wl, sizeof(wl), "%s won the round", g_oppId.c_str());
+			if (g_lastRoundWin > 0) snprintf(wl, sizeof(wl), "You won round %d", prev);
+			else                    snprintf(wl, sizeof(wl), "%s won round %d", g_oppId.c_str(), prev);
 			DrawTextOutlined(sw / 2 - (int)strlen(wl) * 8, cy - 74, wl, FONT_BIG, g_lastRoundWin > 0 ? green : red);
 		}
 		char rt[32]; snprintf(rt, sizeof(rt), "ROUND %d", g_showdownRound);
