@@ -97,8 +97,11 @@ function wrap(socket: net.Socket, mask: boolean): WSConn {
   const parser = createParser(
     (s) => { let m: unknown; try { m = JSON.parse(s); } catch { return; } onJSON(m); },
     () => onClose());
+  let closed = false;
+  const fireClose = () => { if (closed) return; closed = true; onClose(); };
   socket.on('data', parser);
-  socket.on('close', () => onClose());
+  socket.on('end', () => { try { socket.end(); } catch { /* */ } fireClose(); });  // peer FIN (upgraded sockets may allowHalfOpen)
+  socket.on('close', () => fireClose());
   socket.on('error', () => {});
   return {
     send: (obj: unknown) => { try { socket.write(encodeFrame(JSON.stringify(obj), mask)); } catch { /* closed */ } },

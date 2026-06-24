@@ -1,10 +1,107 @@
 // net.h - realtime net client. mod <-> localhost TCP <-> bridge <-> WebSocket <-> relay.
-// POSIX sockets (zero link deps); Windows online is a follow-up winsock build. Two ways in:
+// POSIX sockets (Linux) / winsock (Windows, links ws2_32); zero other deps. Two ways in:
 // host/join by code, or ranked matchmaking. See docs/net-protocol.md.
 #pragma once
 #include "state.h"
+#include "levels.h"   // load_match_level on auto-load
 
-#ifndef _WIN32
+// defined further down (platform socket layer + desync), but used by net_handle just below:
+static void net_sendline(const std::string& s);
+[[maybe_unused]] static void note_opp_hash(long tick, uint64_t h, const char* plat);
+static void note_local_hash(long tick, uint64_t h);
+
+// ---- shared line protocol (platform-independent) ----
+static void net_handle(const std::string& ln) {
+	char a[40] = { 0 }, b[40] = { 0 }; long t; float x, y; int rk = 0, iv = 0, lv = -1, cap = 0; unsigned sd = 0; unsigned long long hh = 0;
+	char eC = 0, mC = 0; int fl = 0;
+	int gn = sscanf(ln.c_str(), "g %ld %f %f %c %c %d", &t, &x, &y, &eC, &mC, &fl);
+	if (gn >= 3 && strncmp(ln.c_str(), "g ", 2) == 0) { (void)t; if (valid_pos(x, y)) { g_liveX = x; g_liveY = y; g_liveValid = true; if (gn >= 6) { g_liveEmotion = eC; g_liveMotion = mC; g_liveFlip = fl != 0; } } }
+	else if (sscanf(ln.c_str(), "oh %ld %llx %39s", &t, &hh, a) == 3) note_opp_hash(t, (uint64_t)hh, a);
+	else if (strncmp(ln.c_str(), "nocontest", 9) == 0) {
+		g_noContest = true; long nt = -1; char rs[24] = { 0 }; sscanf(ln.c_str(), "nocontest %23s %ld", rs, &nt);
+		snprintf(g_roundMsg, sizeof(g_roundMsg), "NO CONTEST (%s) @t%ld - not ranked", rs[0] ? rs : "desync", nt);
+	}
+	else if (strncmp(ln.c_str(), "auth ", 5) == 0) {   // authoritative (re-sim) result; overrides the provisional
+		char k[16] = { 0 }, w[40] = { 0 }, r[24] = { 0 }; sscanf(ln.c_str() + 5, "%15s %39s %23s", k, w, r);
+		const char* outcome = (strcmp(k, "no_contest") == 0) ? "NO CONTEST" : (g_playerId == w ? "WIN" : "LOSS");
+		snprintf(g_roundMsg, sizeof(g_roundMsg), "OFFICIAL %s: %s (%s)", k, outcome, r);
+	}
+	else if (sscanf(ln.c_str(), "ob %39s %f %f", a, &x, &y) == 3) { if (valid_pos(x, y)) { if (g_oppBuildReady) { g_oppBuild.clear(); g_oppBuildReady = false; } g_oppBuild.push_back({ a, x, y }); } }
+	else if (strncmp(ln.c_str(), "obend", 5) == 0) g_oppBuildReady = true;
+	else if (sscanf(ln.c_str(), "match %39s %39s %d %d %u", a, b, &rk, &lv, &sd) >= 2) {
+		g_matched = true; g_ranked = rk != 0; g_oppId = b; g_levelIndex = lv; if (sd) g_seed = sd; g_liveValid = false; g_oppBuild.clear(); g_oppBuildReady = false;
+		g_noContest = false; g_desync = false; g_oppHashes.clear();   // fresh match: clear desync state
+		g_seriesOver = false; g_seriesMsg[0] = 0;   // clear the previous series banner
+		snprintf(g_netMsg, sizeof(g_netMsg), "matched vs %s%s", b, g_ranked ? " [ranked]" : "");
+		if (g_autoLoad) { load_match_level(); net_sendline("ready"); }   // both load the same level, then ready up
+	} else if (sscanf(ln.c_str(), "round %d %d %u", &iv, &lv, &sd) == 3) {
+		// next Bo3 round: a FRESH level (each round is a different level). Load it, then ready up so the relay
+		// fires the synced countdown once both clients have re-loaded.
+		g_levelIndex = lv; if (sd) g_seed = sd; g_liveValid = false; g_oppBuild.clear(); g_oppBuildReady = false;
+		snprintf(g_netMsg, sizeof(g_netMsg), "round %d - loading level", iv);
+		if (g_autoLoad) { load_match_level(); net_sendline("ready"); }
+	} else if (sscanf(ln.c_str(), "countdown %d %d", &iv, &cap) >= 1) {
+		if (iv > 0) g_buildSeconds = iv;      // synced build phase: align both clients to the relay signal
+		if (cap > 0) { g_roundCapSeconds = cap; g_roundCapF = (float)cap; }   // relay-authoritative round cap (synced clock)
+		g_buildStart = Time(); g_forcedStart = false;
+		g_roundStart = 0.0;                   // round/cap clock does NOT run during build - it starts at the first Go (begin_sim)
+		snprintf(g_netMsg, sizeof(g_netMsg), "build %ds (synced)", g_buildSeconds);
+	} else if (sscanf(ln.c_str(), "code %39s", a) == 1) snprintf(g_netMsg, sizeof(g_netMsg), "hosting - code %s", a);
+	else if (sscanf(ln.c_str(), "joinfail %39s", a) == 1) snprintf(g_netMsg, sizeof(g_netMsg), "no game for code %s", a);
+	else if (strncmp(ln.c_str(), "result ", 7) == 0) {
+		char w[16] = { 0 }, r[24] = { 0 }; int yw = 0, ow = 0;
+		sscanf(ln.c_str() + 7, "%15s %23s %d %d", w, r, &yw, &ow);
+		g_youWins = yw; g_ghostWins = ow;       // relay is authoritative for the online series score
+		snprintf(g_roundMsg, sizeof(g_roundMsg), "ONLINE round: %s by %s  series %d-%d", w, r, yw, ow);
+	} else if (strncmp(ln.c_str(), "series ", 7) == 0) {
+		char w[16] = { 0 }; int yw = 0, ow = 0; sscanf(ln.c_str() + 7, "%15s %d %d", w, &yw, &ow);
+		g_youWins = yw; g_ghostWins = ow;
+		g_interRound = false;   // series over: no next level loads, so clear the inter-round overlay/modal suppression
+		snprintf(g_roundMsg, sizeof(g_roundMsg), "SERIES %s  %d-%d (best of 3)", strcmp(w, "you") == 0 ? "WON" : "LOST", yw, ow);
+		snprintf(g_seriesMsg, sizeof(g_seriesMsg), "SERIES %s  %d-%d", strcmp(w, "you") == 0 ? "WON" : "LOST", yw, ow);
+		g_seriesOver = true;    // persistent banner, drawn regardless of screen until the next match
+	} else if (strncmp(ln.c_str(), "oppleft", 7) == 0) { g_matched = false; g_liveValid = false; g_interRound = false; snprintf(g_netMsg, sizeof(g_netMsg), "opponent left"); }
+}
+
+#ifdef _WIN32
+// ---- winsock (Windows) ----
+static SOCKET g_sock = INVALID_SOCKET;
+static std::string g_rx;
+static bool g_wsaUp = false;
+static void net_sendline(const std::string& s) {
+	if (g_sock == INVALID_SOCKET) return;
+	std::string l = s + "\n";
+	::send(g_sock, l.data(), (int)l.size(), 0);
+}
+static void net_close() {
+	if (g_sock != INVALID_SOCKET) { ::closesocket(g_sock); g_sock = INVALID_SOCKET; }
+	g_matched = false; g_liveValid = false;
+	if (g_wsaUp) { WSACleanup(); g_wsaUp = false; }
+}
+static bool net_connect() {
+	if (!g_wsaUp) { WSADATA w; if (WSAStartup(MAKEWORD(2, 2), &w) != 0) return false; g_wsaUp = true; }
+	g_sock = ::socket(AF_INET, SOCK_STREAM, 0);
+	if (g_sock == INVALID_SOCKET) return false;
+	sockaddr_in a; memset(&a, 0, sizeof(a));
+	a.sin_family = AF_INET; a.sin_port = htons((u_short)g_bridgePort);
+	if (InetPtonA(AF_INET, g_bridgeHost.c_str(), &a.sin_addr) != 1 || ::connect(g_sock, (sockaddr*)&a, sizeof(a)) != 0) {
+		::closesocket(g_sock); g_sock = INVALID_SOCKET; return false;
+	}
+	u_long nb = 1; ioctlsocket(g_sock, FIONBIO, &nb);   // non-blocking after the (blocking) localhost connect
+	net_sendline("hello " + g_playerId);
+	return true;
+}
+static void net_poll() {
+	if (g_sock == INVALID_SOCKET) return;
+	char buf[1024]; int n;
+	while ((n = ::recv(g_sock, buf, sizeof(buf), 0)) > 0) {
+		g_rx.append(buf, (size_t)n);
+		size_t p; while ((p = g_rx.find('\n')) != std::string::npos) { net_handle(g_rx.substr(0, p)); g_rx.erase(0, p + 1); }
+	}
+}
+static bool net_up() { return g_sock != INVALID_SOCKET; }
+#else
+// ---- POSIX sockets (Linux) ----
 static int g_sock = -1;
 static std::string g_rx;
 static void net_sendline(const std::string& s) {
@@ -25,26 +122,6 @@ static bool net_connect() {
 	net_sendline("hello " + g_playerId);
 	return true;
 }
-static void net_handle(const std::string& ln) {
-	char a[40] = { 0 }, b[40] = { 0 }; long t; float x, y; int rk = 0, iv = 0;
-	if (sscanf(ln.c_str(), "g %ld %f %f", &t, &x, &y) == 3) { (void)t; if (valid_pos(x, y)) { g_liveX = x; g_liveY = y; g_liveValid = true; } }
-	else if (sscanf(ln.c_str(), "ob %39s %f %f", a, &x, &y) == 3) { if (valid_pos(x, y)) { if (g_oppBuildReady) { g_oppBuild.clear(); g_oppBuildReady = false; } g_oppBuild.push_back({ a, x, y }); } }
-	else if (strncmp(ln.c_str(), "obend", 5) == 0) g_oppBuildReady = true;
-	else if (sscanf(ln.c_str(), "match %39s %39s %d", a, b, &rk) >= 2) {
-		g_matched = true; g_ranked = rk != 0; g_oppId = b; g_liveValid = false; g_oppBuild.clear(); g_oppBuildReady = false;
-		snprintf(g_netMsg, sizeof(g_netMsg), "matched vs %s%s", b, g_ranked ? " [ranked]" : "");
-	} else if (sscanf(ln.c_str(), "countdown %d", &iv) == 1) {
-		if (iv > 0) g_buildSeconds = iv;      // synced build phase: align both clients to the relay signal
-		g_buildStart = Time(); g_forcedStart = false;
-		snprintf(g_netMsg, sizeof(g_netMsg), "build %ds (synced)", g_buildSeconds);
-	} else if (sscanf(ln.c_str(), "code %39s", a) == 1) snprintf(g_netMsg, sizeof(g_netMsg), "hosting - code %s", a);
-	else if (sscanf(ln.c_str(), "joinfail %39s", a) == 1) snprintf(g_netMsg, sizeof(g_netMsg), "no game for code %s", a);
-	else if (strncmp(ln.c_str(), "result ", 7) == 0) {
-		char w[16] = { 0 }, r[24] = { 0 }; sscanf(ln.c_str() + 7, "%15s %23s", w, r);
-		if (!strcmp(w, "you")) g_youWins++; else if (!strcmp(w, "opponent")) g_ghostWins++;
-		snprintf(g_roundMsg, sizeof(g_roundMsg), "ONLINE result: %s by %s  match %d-%d", w, r, g_youWins, g_ghostWins);
-	} else if (strncmp(ln.c_str(), "oppleft", 7) == 0) { g_matched = false; g_liveValid = false; snprintf(g_netMsg, sizeof(g_netMsg), "opponent left"); }
-}
 static void net_poll() {
 	if (g_sock < 0) return;
 	char buf[1024]; ssize_t n;
@@ -54,16 +131,47 @@ static void net_poll() {
 	}
 }
 static bool net_up() { return g_sock >= 0; }
-#else
-static void net_sendline(const std::string&) {}
-static void net_close() {}
-static bool net_connect() { static bool warned = false; if (!warned) { warned = true; Eets::Log("hop_on_eets: online needs the winsock build on Windows (TODO) - Linux for now"); } return false; }
-static void net_poll() {}
-static bool net_up() { return false; }
 #endif
 
 // connect on demand, then send a command line to the bridge
 static void net_action(const std::string& cmd) {
 	if (!net_up()) { if (!net_connect()) { snprintf(g_netMsg, sizeof(g_netMsg), "bridge offline (%s:%d)", g_bridgeHost.c_str(), g_bridgePort); return; } }
 	net_sendline(cmd);
+}
+
+// ---- checkpoint state-hash exchange (spec Part 10) -----------------------------------------
+// Same-platform divergence at the same tick = a real desync (cheat / nondeterminism); cross-platform
+// hashes legitimately differ (FP physics) so we never compare across platforms. On a same-platform
+// mismatch: flag it, withhold the ranked result, report to the relay (-> no-contest), save a diag.
+static void write_desync_diag(long tick, uint64_t local, uint64_t opp) {
+	char path[128]; snprintf(path, sizeof(path), "Log/hop_on_eets_desync_%03d.json", g_roundCounter);
+	FILE* f = fopen(path, "w"); if (!f) return;
+	fprintf(f, "{\n  \"desync_version\": 1,\n  \"round\": %d,\n  \"tick\": %ld,\n  \"platform\": \"%s\",\n"
+	           "  \"seed\": %u,\n  \"level_index\": %d,\n  \"local_hash\": \"%016llx\",\n  \"opp_hash\": \"%016llx\"\n}\n",
+	        g_roundCounter, tick, PLATFORM, g_seed, g_levelIndex,
+	        (unsigned long long)local, (unsigned long long)opp);
+	fclose(f);
+	Eets::Log("hop_on_eets: DESYNC @t%ld local=%016llx opp=%016llx -> %s", tick,
+	          (unsigned long long)local, (unsigned long long)opp, path);
+}
+static void flag_desync(long tick, uint64_t local, uint64_t opp) {
+	if (g_desync) return;                       // first divergence per round is enough
+	g_desync = true; g_desyncTick = tick;
+	write_desync_diag(tick, local, opp);
+	if (!g_desyncSent) { g_desyncSent = true; char b[48]; snprintf(b, sizeof(b), "desync %ld", tick); net_sendline(b); }
+	snprintf(g_netMsg, sizeof(g_netMsg), "DESYNC @t%ld - result withheld", tick);
+}
+// our checkpoint at `tick` just computed: compare if the opponent's already arrived
+static void note_local_hash(long tick, uint64_t h) {
+	if (g_noContest || g_desync) return;
+	auto it = g_oppHashes.find(tick);
+	if (it != g_oppHashes.end() && it->second != h) flag_desync(tick, h, it->second);
+}
+// opponent's checkpoint arrived: stash it (same-platform only) and compare to ours if we have it
+// (only net_handle calls this, which is the POSIX build; unused in the Windows stub build)
+[[maybe_unused]] static void note_opp_hash(long tick, uint64_t h, const char* plat) {
+	if (g_noContest || g_desync) return;
+	if (!plat || strcmp(plat, PLATFORM) != 0) return;   // cross-platform divergence is expected, not a desync
+	g_oppHashes[tick] = h;
+	for (auto& s : g_samples) if (s.tick == tick) { if (s.hash != h) flag_desync(tick, s.hash, h); break; }
 }

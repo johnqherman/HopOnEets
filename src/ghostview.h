@@ -13,6 +13,31 @@ static void draw_ghost_marker(int sx, int sy) {
 	FillCircle(sx - 7, sy - 8, 4, eye, 10);
 	FillCircle(sx + 7, sy - 8, 4, eye, 10);
 }
+// read the local Eets's anim state, to stream to the opponent so their ghost mirrors us exactly
+static void read_eets_anim(Object* e, char& emo, char& mot, int& flip) {
+	emo = 'h'; mot = 'w'; flip = 0;
+	if (!e) return;
+	if (EmotionExtension* ee = Object_GetEmotionExtension(e)) {
+		const char* n = EmotionExtension_GetEmotionName(ee);
+		if (n && n[0]) { char c = n[0]; if (c >= 'A' && c <= 'Z') c += 32; if (c == 'a' || c == 's' || c == 'h') emo = c; }
+	}
+	if (WalkingExtension* we = Object_GetWalkingExtension(e)) {
+		switch ((WalkState)WalkingExtension_GetState(we)) {
+			case WES_Rise: case WES_Jumping:                      mot = 'j'; break;   // rising / jumping
+			case WES_Falling:                                     mot = 'f'; break;
+			case WES_Standing: case WES_Alert: case WES_Inactive: mot = 's'; break;   // squat / idle
+			default:                                              mot = 'w'; break;   // walking / rolling / thwacking
+		}
+	}
+	flip = Object_GetFlipped(e) ? 1 : 0;
+}
+// the opponent's streamed state -> a real Eets .anim (eets_<emotion>_<motion>.anim)
+static std::string live_anim_path() {
+	const char* emo = g_liveEmotion == 'a' ? "angry" : g_liveEmotion == 's' ? "scared" : "happy";
+	const char* mot = g_liveMotion == 'j' ? "jump" : g_liveMotion == 'f' ? "fall" : g_liveMotion == 's' ? "squat" : "walk";
+	return std::string("DATA:Animations/Eets/eets_") + emo + "_" + mot + ".anim";
+}
+
 static void draw_ghost(float dt) {
 	if (!g_showGhost) return;
 	float gx, gy;
@@ -21,9 +46,12 @@ static void draw_ghost(float dt) {
 	else if (!g_haveGhost || !ghost_pos_at(g_tick, gx, gy)) return;
 	if (!valid_pos(gx, gy)) return;                // garbage guard
 	int sx = (int)gx, sy = (int)gy;                // identity world->screen (single-screen levels)
+	// live opponent: mirror their exact emotion x motion x facing. recorded ghost: the chosen sprite.
+	std::string animPath = live ? live_anim_path() : g_ghostAnim;
+	bool flip = live && g_liveFlip;
 	bool drew = false;                             // animated, semi-transparent Eets
-	if (!g_ghostAnim.empty())
-		drew = DrawAnim(g_ghostAnim.c_str(), sx - 32, sy - 32, dt, 0.0f, Color(255, 255, 255, GHOST_ALPHA));
+	if (!animPath.empty())
+		drew = DrawAnim(animPath.c_str(), sx - 32, sy - 32, dt, 0.0f, Color(255, 255, 255, GHOST_ALPHA), flip);
 	if (!drew) draw_ghost_marker(sx, sy);          // fallback if the anim path doesn't resolve on this install
 	DrawTextOutlined(sx - 26, sy - 48, live ? "OPPONENT" : "GHOST", FONT_SMALL, Color(180, 220, 255, 255));
 }

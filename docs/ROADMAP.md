@@ -25,8 +25,13 @@ What's done, what's left, in priority order. Pairs with the spec
 
 ## 0. Verify first (blocking — needs the game running; can't be done headless here)
 
-- [ ] In-game smoke test: events fire (`object_spawn` in build, `level_complete`), `force_start_sim`
-      actually starts the sim **and doesn't break ResetSimulation** (the `[sim+0xb8]` snapshot concern)
+> Full step-by-step in-game test plan: **[TESTING.md](TESTING.md)** (phases A–I, dependency-ordered).
+
+
+- [ ] In-game smoke test: events fire (`object_spawn` in build, `level_complete`); `force_start_sim`
+      (now calls the real `Simulator::StartSimulation` on Linux — does the initial-state snapshot +
+      RNG reseed) starts + resets cleanly. (Win still uses a flag-flip at `[sim+0xb8]` — needs the Win
+      `StartSimulation` address; the Linux sim flag is at `[sim+0x160]`, so offsets differ per build.)
 - [ ] Confirm native `TICK_RATE` (assumed 60)
 - [ ] Confirm ghost draws at the right screen spot (world==screen assumption) on real levels
 - [ ] Confirm menu clicks land (UI doesn't consume input — may pass through to the game)
@@ -34,17 +39,35 @@ What's done, what's left, in priority order. Pairs with the spec
 
 ## 1. Make online matches real (v0.2 completion)
 
-- [ ] **Level sync — CRITICAL.** Nothing makes both players load the *same* level yet (relay sends a
-      seed, not a level). Need: relay picks a level from the pool → clients **load that specific level**
-      programmatically (RE the level-load/`Simulator::LoadLevel` entry) → verify `level_hash` matches.
-- [x] Server-synced countdown — relay broadcasts `countdown {seconds}` on match; both clients start their
-      build timer on receipt (within latency) and force-start together. (Move to after-ready once
-      level-load/ready exist.)
-- [ ] Reconnect handling; disconnect = loss (spec Part 12)
+- [~] **Level sync** — SELECTION + LOAD wired (Linux). Relay picks a per-match level index; both clients
+      resolve `index % poolSize` against the runtime `LevelManager` pool (same catalog → same level). The
+      **"Load match level"** menu button calls `MainMenu::LoadSimulatorLevel(FileNamePair*)@0x629ff0` with a
+      *faked* MainMenu (it only uses `this` as scratch for the level's "Music" string at `this+0x14b0`, so a
+      buffer with a valid empty `std::string` there suffices); the pool entry's `FileNamePair*` is the arg.
+      It loads objects + win condition into the build phase (does NOT start the sim). **Auto-load on match**
+      is wired (client auto-loads + sends `ready`; `auto_load_level` cfg, default on) with the manual menu
+      button as fallback. REMAINING: verify in-game (offsets/ABI; crash-guard protects); Windows
+      (`LoadSimulatorLevel`/`GetLevelManager` addrs); `level_hash` verification.
+- [x] Server-synced countdown + ready-gate — clients auto-load the matched level then send `ready`; the
+      relay sends `countdown {seconds}` only once BOTH are ready (and again after each round). Both start
+      the build timer on receipt (within latency) and force-start together. e2e checks it stays gated.
+- [x] Disconnect = loss — relay awards the series to whoever remains (sends `opponent_left` +
+      `series_over winner=you`); the bridge propagates a mod quit (TCP close) to the relay by closing its
+      WS. Fixed a latent bug: upgraded WS sockets allowHalfOpen, so a peer FIN fired `'end'` not `'close'` —
+      ws.ts now treats `'end'` as close (guarded). e2e covers it. REMAINING: reconnect window (today any
+      disconnect = immediate loss, no grace/rejoin).
 - [ ] `wss://` + auth on the bridge/relay (not the plugin)
-- [ ] Windows online (winsock build, or dynamic-load ws2_32)
+- [x] Windows online (winsock) — `net.h` socket layer split into shared `net_handle` + per-platform
+      sockets; Windows uses winsock2 (`WSAStartup`/`ioctlsocket` non-blocking), links `-lws2_32`. `state.h`
+      pulls winsock2 before windows.h. Win can host/join/queue/race/score/desync over the bridge. CAVEAT:
+      Win auto-load is a no-op (`GetLevelManager`/`LoadSimulatorLevel` Win addrs not RE'd) — load the level
+      manually for now.
 - [ ] Lobby / ready / rematch flow; show opponent name in-menu
-- [ ] Checkpoint state-hash exchange over the net (same-platform desync detection, `STATE_HASH_INTERVAL`)
+- [x] Checkpoint state-hash exchange (same-platform desync detection) — the mod streams its periodic
+      `state_hash()` (every `hash_interval` ticks) with its `platform`; the opponent compares **only
+      same-platform** hashes at the same tick (cross-platform FP physics differs by design). A mismatch ⇒
+      the client sends `desync`; the relay marks the match `no_contest` for both and stops scoring; the mod
+      writes `Log/hop_on_eets_desync_*.json` + shows a HUD banner. e2e covers hash relay + no-contest.
 
 ## 2. Gameplay fidelity (RE tasks)
 
@@ -59,27 +82,51 @@ What's done, what's left, in priority order. Pairs with the spec
 
 - [ ] Read the true sim tick (`_DAT_00ee3da4`, set in step `FUN_00536440`) instead of the frame counter
       (Linux global address still unknown — only the Win binary was RE'd; or use `[sim+0xbc]`)
-- [ ] RE the Linux det-mode flag + PRNG seed globals (seed-pin is Windows-only today)
-- [ ] Empirically confirm seed-pin makes a RNG level reproducible (determinism probe on such a level)
+- [~] Seeding: the engine already reseeds the deterministic RNG on every `Simulator::StartSimulation`
+      (`Util::SetSeedInternal(..., 0x57670fd)`), so runs are reproducible on Linux **without** the manual
+      pin (which used Win-only global offsets anyway). To use a per-match seed, set it right after
+      StartSimulation or hook `SetSeedInternal`. Win det-mode/seed globals still as-is.
+- [x] Per-match seed control — relay sends a random per-match seed (in `match`); the mod pins it
+      (`DetMode_flag` + `PRNG_seed`, both platforms) right after `StartSimulation`, overriding the engine's
+      fixed `0x57670fd`. Same-platform clients get identical RNG (cross-platform differs — different
+      generators — so cross-platform ranked still relies on authoritative re-sim).
 
 ## 4. Ranked (v0.3)
 
 - [ ] Accounts / persistent player IDs
-- [ ] Best-of-3 series orchestration (today: single-round result + a running tally)
+- [x] Best-of-3 series orchestration — relay tracks per-match round wins, sends `result` (with the series
+      score) each round and `series_over` at 2 wins; the relay is authoritative for the score (the mod no
+      longer double-counts when online). e2e plays a full 2-0 series.
 - [ ] Rating (Elo/Glicko) + leaderboard
-- [ ] Ranked map-pool selection (depends on level sync, §1)
-- [ ] **Authoritative headless re-sim** (top risk; spec Part 6) — FNA3D/SDL null backend or a driven
-      client; the source of truth for cross-platform ranked
+- [~] Ranked map-pool — DONE: built at runtime from `LevelManager` (`src/levels.h`); **non-tutorial** =
+      skip World 1 (hub 0) entirely + skip the first `hub_intro_skip` levels of every other hub (intro
+      levels; count is a menu-tunable setting, default 1). Relay picks a per-match index; both clients
+      resolve `index % poolSize` to the same level (e2e-verified). REMAINING: actually LOAD the chosen
+      level (`MainMenu::LoadSimulatorLevel` + `MainMenu::i()`); read the per-hub `tutorial_minimum` for
+      an exact intro count instead of the fixed skip; verify the `LevelManager` offsets in-game.
+- [~] **Authoritative headless re-sim** (top risk; spec Part 6) — see [headless-resim.md](headless-resim.md).
+      DONE: mod-side batch driver (`src/resim.h`, `resim_file` cfg) — parse input log → load level →
+      apply build via `World_CreateObject` → `force_start_sim` → read outcome → write
+      `Log/hop_on_eets_verdict.json` (`reproduced` vs the submitter's claim); replays now self-describing
+      (`level_index`); exit-on-done with a verdict exit code + `HOE_RESIM_*` env overrides. Headless
+      launcher `tools/resim-runner.sh` (xvfb + dummy audio, watch verdict, exit code). `netproto/verifier.ts`
+      = `verifyMatch` + `ResimRunner` (Mock + Shell); verify→decide unit-tested (`verifier.test.ts`, in
+      `npm test`). Null FNA3D backend `nullbackend/libnullbackend.so` (`--null`, all 29 imports stubbed,
+      unvalidated). Relay→verifier handoff: clients `submit_replay` (base64 log), relay calls the injected
+      `RankedVerifier` on a ranked round and emits `authoritative`; relay CLI enables it when `EETS_DIR` set.
+      e2e-covered. REMAINING: Win canonical build (needs Win level addrs); in-game validation (incl. `--null`).
 - [ ] Replay submission + storage on the server
 
 ## 5. Content & polish
 
 - [ ] Curated ranked level pool (`pool_v0.json` is a placeholder — real ids/names/hashes)
-- [~] **Animated Eets ghost** — DONE: animated semi-transparent Eets by default (`DrawAnim` +
-      transparent tint), in-menu "Cycle ghost sprite" to match your install, marker fallback if the
-      path won't load. REMAINING: match the opponent's *exact* per-motion animation + facing — stream
-      motion name / frame index / flipped and drive the ghost frame-for-frame (needs the game's anim
-      asset names + a flip-capable draw, e.g. `GraphicsEngine_DrawSprite` with swapped UVs).
+- [x] **Animated Eets ghost — mirrors the opponent.** The ghost now reflects the opponent's exact
+      Eets state: each pos frame also streams emotion (happy/angry/scared via `EmotionExtension_GetEmotionName`),
+      motion (walk/jump/fall/squat from `WalkingExtension_GetState`) and facing (`Object_GetFlipped`); the
+      receiver maps it to the real `DATA:Animations/Eets/eets_<emotion>_<motion>.anim` and draws it flipped
+      (framework `DrawAnim`/`DrawSpriteAt` gained a `flip` arg = swapped U). So it looks like the opponent's
+      own Eets is in the level. Recorded ghost still uses the menu-chosen sprite. (Real anim names found from
+      the installed `Data/Animations/Eets/`; the old cycle list was guesses.)
 - [ ] World→screen for scrolling/zoomed levels (apply the GFX view matrix `FUN_0048f2c0`)
 - [ ] Sound cues (countdown, win/lose); result panel / rematch button
 

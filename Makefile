@@ -13,11 +13,12 @@ $(OUT)/$(MOD).so: $(MOD).cpp $(wildcard src/*.h) | $(OUT)
 win: $(OUT)/$(MOD).dll
 
 $(OUT)/$(MOD).dll: $(MOD).cpp $(wildcard src/*.h) $(WINLIB) | $(OUT)
-	i686-w64-mingw32-g++ -O2 -std=c++17 -Wall -shared -I$(INC) -o $@ $< $(WINLIB)
+	i686-w64-mingw32-g++ -O2 -std=c++17 -Wall -shared -I$(INC) -o $@ $< $(WINLIB) -lws2_32
 
-# one-shot bundle (.dll + .so + source + manifest + assets) via the framework CLI
+# one-shot bundle (.dll + .so + source + manifest + assets) via the framework CLI.
+# EETSMOD_WINLIBS: the mod uses winsock on Windows, so the cross-built .dll links ws2_32.
 pack:
-	eetsmod pack $(MOD).cpp -o $(MOD).eetsmod
+	EETSMOD_WINLIBS=-lws2_32 eetsmod pack $(MOD).cpp -o $(MOD).eetsmod
 
 $(OUT):
 	mkdir -p $(OUT)

@@ -42,10 +42,14 @@ export function startBridge(opts: BridgeOpts): { tcp: net.Server; close(): void 
       case 'host':   relay.send({ type: 'host' }); break;
       case 'join':   relay.send({ type: 'join', code: a[1] || '' }); break;
       case 'queue':  relay.send({ type: 'queue' }); break;
+      case 'ready':  relay.send({ type: 'ready' }); break;
       case 'build':  relay.send({ type: 'build', name: a[1], x: +a[2], y: +a[3] }); break;
       case 'buildend': relay.send({ type: 'buildend' }); break;
-      case 'pos':    relay.send({ type: 'pos', tick: +a[1], x: +a[2], y: +a[3] }); break;
-      case 'finish': relay.send({ type: 'finish', finish_tick: +a[1], completed: a[2] === '1', items_used: +a[3] }); break;
+      case 'pos':    relay.send({ type: 'pos', tick: +a[1], x: +a[2], y: +a[3], emo: a[4] || 'h', mot: a[5] || 'w', flip: a[6] ? +a[6] : 0 }); break;   // a[4..6] = opponent anim state
+      case 'hash':   relay.send({ type: 'hash', tick: +a[1], hash: a[2], platform: a[3] }); break;
+      case 'desync': relay.send({ type: 'desync', tick: +a[1] }); break;
+      case 'replay': relay.send({ type: 'submit_replay', round: +a[1], platform: a[2], log: a[3] }); break;   // a[3] = base64 input log
+      case 'finish': relay.send({ type: 'finish', finish_tick: +a[1], completed: a[2] === '1', items_used: +a[3], deaths: a[4] ? +a[4] : 0 }); break;
     }
   }
 
@@ -58,15 +62,20 @@ export function startBridge(opts: BridgeOpts): { tcp: net.Server; close(): void 
       const q = pending; pending = []; q.forEach(handleModLine);
       conn.onJSON((m: any) => {
         switch (m.type) {
-          case 'match_config':  toMod(`match ${m.match_id} ${m.opponent} ${m.ranked ? 1 : 0}`); break;
-          case 'countdown':     toMod(`countdown ${m.seconds}`); break;
+          case 'match_config':  toMod(`match ${m.match_id} ${m.opponent} ${m.ranked ? 1 : 0} ${m.level ?? -1} ${m.seed ?? 0}`); break;
+          case 'countdown':     toMod(`countdown ${m.seconds} ${m.cap ?? 0}`); break;
+          case 'round':         toMod(`round ${m.round} ${m.level ?? -1} ${m.seed ?? 0}`); break;
           case 'room':          toMod(`code ${m.code}`); break;
           case 'join_failed':   toMod(`joinfail ${m.code}`); break;
-          case 'opp_pos':       toMod(`g ${m.tick} ${m.x} ${m.y}`); break;
+          case 'opp_pos':       toMod(`g ${m.tick} ${m.x} ${m.y} ${m.emo || 'h'} ${m.mot || 'w'} ${m.flip ? 1 : 0}`); break;
           case 'opp_build':     toMod(`ob ${m.name} ${m.x} ${m.y}`); break;
           case 'opp_buildend':  toMod('obend'); break;
           case 'opp_finish':    toMod(`oppfin ${m.finish_tick} ${m.completed ? 1 : 0} ${m.items_used}`); break;
-          case 'result':        toMod(`result ${m.winner} ${m.reason}`); break;
+          case 'opp_hash':      toMod(`oh ${m.tick} ${m.hash} ${m.platform}`); break;
+          case 'no_contest':    toMod(`nocontest ${m.reason} ${m.tick ?? -1}`); break;
+          case 'authoritative': toMod(`auth ${m.kind} ${m.winner || '-'} ${m.reason}`); break;
+          case 'result':        toMod(`result ${m.winner} ${m.reason} ${m.you_wins} ${m.opp_wins}`); break;
+          case 'series_over':   toMod(`series ${m.winner} ${m.you_wins} ${m.opp_wins}`); break;
           case 'opponent_left': toMod('oppleft'); break;
         }
       });
@@ -83,7 +92,7 @@ export function startBridge(opts: BridgeOpts): { tcp: net.Server; close(): void 
       let i: number;
       while ((i = modBuf.indexOf('\n')) >= 0) { handleModLine(modBuf.slice(0, i)); modBuf = modBuf.slice(i + 1); }
     });
-    sock.on('close', () => { log('mod disconnected'); mod = null; });
+    sock.on('close', () => { log('mod disconnected'); mod = null; if (relay) { relay.close(); relay = null; } });  // mod quit -> leave the match
     sock.on('error', () => {});
   });
   tcp.listen(modPort, '127.0.0.1', () => log(`bridge tcp on 127.0.0.1:${modPort} -> relay ${relayHost}:${relayPort}`));
