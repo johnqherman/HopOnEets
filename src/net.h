@@ -2,6 +2,7 @@
 // POSIX sockets (Linux) / winsock (Windows, links ws2_32); zero other deps. Two ways in:
 // host/join by code, or ranked matchmaking. See docs/net-protocol.md.
 #pragma once
+#include <cmath>        // pow (forfeit Elo prediction)
 #include "state.h"
 #include "levels.h"     // load_match_level on auto-load
 #include "ws_client.h"  // direct WebSocket (ws/wss) transport to the relay
@@ -134,7 +135,11 @@ static void forfeit_match() {
 	net_close();                         // disconnect = loss; the relay awards the opponent the series (+ranked elo)
 	// show a DEFEAT result screen (by forfeit), then auto-return to the menu - same flow as a normal loss.
 	// We've disconnected, so we have no elo for ourselves; just show the forfeit.
-	g_seriesWon = false; g_winForfeit = true; g_eloRanked = false;
+	g_seriesWon = false; g_winForfeit = true;
+	if (g_ranked && g_myElo > 0 && g_oppElo > 0) {   // predict the rating hit (the relay is authoritative; same Elo formula)
+		double expOpp = 1.0 / (1.0 + pow(10.0, (g_myElo - g_oppElo) / 400.0));   // opponent's expected score (they win the forfeit)
+		g_eloRanked = true; g_eloOld = g_myElo; g_eloNew = (int)(g_myElo - 32.0 * (1.0 - expOpp) + 0.5);
+	} else g_eloRanked = false;
 	g_winShow = true; g_winStart = Time(); g_winUntil = Time() + WINSCREEN_SECS;
 	g_interRound = false; g_roundMsg[0] = 0; g_seriesOver = false; g_seriesMsg[0] = 0;
 	g_showdownKind = 0; g_pendingShowdown = 0; g_confirmForfeit = false;
