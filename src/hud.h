@@ -64,7 +64,9 @@ static void draw_hud() {
 	if (in_level()) {
 		bool inMatch = (g_matched || g_matchActive);
 		if (g_showdownKind != 0 && Time() < g_showdownUntil) { draw_showdown(); return; }   // cinematic owns the screen - no other overlay
-		if (g_phase == SIM && !g_interRound) { float dt = (float)DeltaTime(); draw_ghost(dt); draw_opp_build(); }
+		// draw the opponent any time we're in a level (not just our SIM): their live ghost shows whenever
+		// THEY are simulating (draw_ghost gates on g_liveValid), and their locked-in build shows during ours.
+		if (!g_interRound) { float dt = (float)DeltaTime(); draw_ghost(dt); draw_opp_build(); }
 
 		if (!g_interRound) {   // between rounds the engine's victory transition makes draw calls unsafe - skip the overlay
 			char hud[200];

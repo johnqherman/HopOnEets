@@ -9,7 +9,7 @@
 // defined further down (platform socket layer + desync), but used by net_handle just below:
 static void net_sendline(const std::string& s);
 [[maybe_unused]] static void note_opp_hash(long tick, uint64_t h, const char* plat);
-static void note_local_hash(long tick, uint64_t h);
+[[maybe_unused]] static void note_local_hash(long tick, uint64_t h);
 
 // ---- shared line protocol (platform-independent) ----
 static void net_handle(const std::string& ln) {
@@ -62,6 +62,7 @@ static void net_handle(const std::string& ln) {
 		char w[16] = { 0 }, r[24] = { 0 }; int yw = 0, ow = 0;
 		sscanf(ln.c_str() + 7, "%15s %23s %d %d", w, r, &yw, &ow);
 		g_youWins = yw; g_ghostWins = ow;       // relay is authoritative for the online series score
+		Eets::Log("hop_on_eets: result %s by %s  series %d-%d", w, r, yw, ow);
 		snprintf(g_roundMsg, sizeof(g_roundMsg), "ONLINE round: %s by %s  series %d-%d", w, r, yw, ow);
 	} else if (strncmp(ln.c_str(), "series ", 7) == 0) {
 		char w[16] = { 0 }; int yw = 0, ow = 0, rk = 0, eo = 0, en = 0;
@@ -168,7 +169,7 @@ static void flag_desync(long tick, uint64_t local, uint64_t opp) {
 	snprintf(g_netMsg, sizeof(g_netMsg), "DESYNC @t%ld - result withheld", tick);
 }
 // our checkpoint at `tick` just computed: compare if the opponent's already arrived
-static void note_local_hash(long tick, uint64_t h) {
+[[maybe_unused]] static void note_local_hash(long tick, uint64_t h) {
 	if (g_noContest || g_desync) return;
 	auto it = g_oppHashes.find(tick);
 	if (it != g_oppHashes.end() && it->second != h) flag_desync(tick, h, it->second);

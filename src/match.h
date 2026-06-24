@@ -11,6 +11,7 @@
 static void report_finish(bool completed) {
 	if (g_finishTick >= 0 || g_phase == IDLE) return;   // once per round; allows SIM (win/DNF) or BUILD (round-cap DNF)
 	g_finishTick = g_tick + g_deathTicks;   // total round time incl. time lost to deaths (the dying penalty)
+	Eets::Log("hop_on_eets: report_finish completed=%d tick=%ld matched=%d ranked=%d", completed ? 1 : 0, g_finishTick, g_matched ? 1 : 0, g_ranked ? 1 : 0);
 	report_determinism();
 	write_replay(completed); write_ghost(g_replayCounter, completed); write_result(completed);
 	if (g_matched) {
@@ -163,12 +164,11 @@ static void match_update() {
 				}
 				if (g_tick / HASH_INTERVAL > g_lastHashBucket) {   // one sample per interval bucket (jump-proof; == g_tick%==0 when ticks step by 1)
 					g_lastHashBucket = g_tick / HASH_INTERVAL;
-					uint64_t hh = state_hash();
-					g_samples.push_back({ g_tick, ep.x, ep.y, hh });
-					if (g_matched) {   // stream the checkpoint for same-platform desync detection
-						char hb[64]; snprintf(hb, sizeof(hb), "hash %ld %016llx %s", g_tick, (unsigned long long)hh, PLATFORM);
-						net_sendline(hb); note_local_hash(g_tick, hh);
-					}
+					g_samples.push_back({ g_tick, ep.x, ep.y, state_hash() });   // recorded for the replay / authoritative re-sim
+					// NO live cross-player hash compare: this is a solution RACE, so the two players build
+					// different contraptions and their state hashes legitimately differ every tick. Comparing
+					// them flagged a false "desync" -> no_contest. Determinism is validated server-side by the
+					// authoritative re-sim of each player's own input log, not by comparing players live.
 				}
 			}
 		}
