@@ -140,7 +140,7 @@ export function startRelay(port: number, log: (s: string) => void = () => {}, op
 
   function maybeResult(conn: ws.WSConn): void {
     const p = peers.get(conn); if (!p || !p.opp) return;
-    const q = peers.get(p.opp); if (!q || !p.finish || !q.finish) return;
+    const q = peers.get(p.opp); if (!q || !p.finish) return;
     if (p.noContest || q.noContest) {   // desynced match: report the round, score nothing
       conn.send({ type: 'no_contest', reason: 'desync' });
       p.opp.send({ type: 'no_contest', reason: 'desync' });
@@ -148,8 +148,14 @@ export function startRelay(port: number, log: (s: string) => void = () => {}, op
       log(`no contest ${p.match}: round void (desync)`);
       return;
     }
+    // First to COMPLETE the level wins the round immediately - don't wait for the opponent (a live race).
+    // A failure waits: the opponent may still complete (and win) or also fail (both-failed -> draw).
+    let r: { self: Verdict; opp: Verdict };
+    if (p.finish.completed) r = { self: { winner: 'you', reason: 'completed' }, opp: { winner: 'opponent', reason: 'completed' } };
+    else if (q.finish && q.finish.completed) r = { self: { winner: 'opponent', reason: 'completed' }, opp: { winner: 'you', reason: 'completed' } };
+    else if (q.finish) r = decide(p.finish, q.finish);   // both finished, neither completed -> both_failed (draw)
+    else return;   // we failed but the opponent is still racing -> wait
     clearRoundTimer(p); clearRoundTimer(q);   // round resolved -> stop the cap clock
-    const r = decide(p.finish, q.finish);
     if (r.self.winner === 'you') p.wins++; else if (r.self.winner === 'opponent') q.wins++;
     conn.send({ type: 'result', ...r.self, you_wins: p.wins, opp_wins: q.wins, provisional: true });
     p.opp.send({ type: 'result', ...r.opp, you_wins: q.wins, opp_wins: p.wins, provisional: true });

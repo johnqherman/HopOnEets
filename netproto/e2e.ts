@@ -101,13 +101,13 @@ function fakeMod(port: number): Mod {
   const ga = await B.expect((l) => l.startsWith('g 12 '), 'B sees A anim state');
   if (ga === 'g 12 130 50 a j 1') ok('opponent anim state relayed: ' + ga); else if (ga) fail('anim state wrong: ' + ga);
 
-  // best-of-3: round 1 (A faster)
-  A.send('finish 100 1 5'); B.send('finish 120 1 6');
+  // best-of-3: first to COMPLETE the level wins the round immediately (live race - no waiting for both)
+  A.send('finish 100 1 5');   // A completes -> wins round 1
   const r1 = await A.expect((l) => l.startsWith('result '), 'A round-1 result');
-  if (r1 && r1.startsWith('result you finish_tick 1 0')) ok('round 1 -> A (series 1-0): ' + r1);
+  if (r1 === 'result you completed 1 0') ok('round 1 -> A (series 1-0): ' + r1);
   else if (r1) fail('round-1 result wrong: ' + r1);
-  // round 2 (A faster again -> best-of-3 decided)
-  A.send('finish 90 1 5'); B.send('finish 110 1 6');
+  // round 2: A completes again -> best-of-3 decided
+  A.send('finish 90 1 5');
   const so = await A.expect((l) => l.startsWith('series '), 'A series_over');
   if (so === 'series you 2 0 0 0 0') ok('best-of-3 -> A (2-0, private/no-elo): ' + so); else if (so) fail('series wrong: ' + so);
   const soB = await B.expect((l) => l.startsWith('series '), 'B series_over');
