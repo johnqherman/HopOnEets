@@ -88,7 +88,7 @@ hop_on_eets.cpp   thin entry layer (framework callbacks)
 src/              state hash determinism levels net ws_client recorder ghostview menu match hud (one TU, all #included)
 hop_on_eets.cfg   framework manifest (sim = 1)
 netproto/         relay + bridge + protocol + e2e (TypeScript, zero runtime deps)
-Makefile  compile_flags.txt  .clangd
+Makefile  .clangd
 ```
 
 ## Relationship to eets-mod-framework
