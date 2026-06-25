@@ -21,8 +21,9 @@ static void net_handle(const std::string &ln) {
   int fl = 0;
   float rot = 0.0f;
   char anim[40] = {0};
-  int gn = sscanf(ln.c_str(), "g %ld %f %f %c %c %d %f %39s", &t, &x, &y, &eC,
-                  &mC, &fl, &rot, anim);
+  int frm = -1;
+  int gn = sscanf(ln.c_str(), "g %ld %f %f %c %c %d %f %39s %d", &t, &x, &y, &eC,
+                  &mC, &fl, &rot, anim, &frm);
   if (gn >= 3 && strncmp(ln.c_str(), "g ", 2) == 0) {
     (void)t;
     if (valid_pos(x, y)) {
@@ -42,6 +43,7 @@ static void net_handle(const std::string &ln) {
         strncpy(g_liveAnim, anim, sizeof(g_liveAnim) - 1);
         g_liveAnim[sizeof(g_liveAnim) - 1] = 0;
       }
+      g_liveFrame = (gn >= 9) ? frm : -1;
     }
   } else if (sscanf(ln.c_str(), "oh %ld %llx %39s", &t, &hh, a) == 3)
     note_opp_hash(t, (uint64_t)hh, a);

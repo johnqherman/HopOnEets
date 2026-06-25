@@ -246,9 +246,10 @@ static void match_update() {
             snprintf(s_lastTok, sizeof(s_lastTok), "%s", tok);
             Eets::Log("hop_on_eets: motion token = '%s' (emo=%c)", tok, emo);
           }
-          char pb[96];
-          snprintf(pb, sizeof(pb), "pos %ld %.1f %.1f %c %c %d %.3f %s", g_tick,
-                   ep.x, ep.y, emo, mot, flip, rot, tok);
+          int frame = Object_GetAnimFrameIndex(e); // exact anim frame -> ghost mirrors it (no looping)
+          char pb[110];
+          snprintf(pb, sizeof(pb), "pos %ld %.1f %.1f %c %c %d %.3f %s %d",
+                   g_tick, ep.x, ep.y, emo, mot, flip, rot, tok, frame);
           net_sendline(pb);
         }
         if (g_tick / HASH_INTERVAL >

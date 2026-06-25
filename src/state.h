@@ -101,6 +101,7 @@ static char g_liveMotion = 'w';  // w/j/f/s = walk/jump/fall/squat (fallback enu
 static bool g_liveFlip = false;  // facing (mirrored)
 static float g_liveRot = 0.0f;   // opponent's rotation (rad) for tumbling (falling/projectile-hit)
 static char g_liveAnim[40] = ""; // opponent's current motion token ("-"/empty = none); maps to the .anim
+static int g_liveFrame = -1;     // opponent's current anim frame (-1 = none -> ghost cycles locally); frame-sync so play-once anims don't loop
 static bool g_codeEntry = false;
 static std::string g_codeBuf;
 static bool g_nameEntry = false;

@@ -75,8 +75,9 @@ export function startBridge(opts: BridgeOpts): {
           flip: a[6] ? +a[6] : 0,
           rot: a[7] ? +a[7] : 0,
           anim: a[8] || "-",
+          frame: a[9] !== undefined ? +a[9] : -1,
         });
-        break; // a[4..8] = emo/mot/flip/rot/anim
+        break; // a[4..9] = emo/mot/flip/rot/anim/frame
       case "hash":
         relay.send({ type: "hash", tick: +a[1], hash: a[2], platform: a[3] });
         break;
@@ -131,7 +132,7 @@ export function startBridge(opts: BridgeOpts): {
             break;
           case "opp_pos":
             toMod(
-              `g ${m.tick} ${m.x} ${m.y} ${m.emo || "h"} ${m.mot || "w"} ${m.flip ? 1 : 0} ${m.rot ?? 0} ${m.anim || "-"}`,
+              `g ${m.tick} ${m.x} ${m.y} ${m.emo || "h"} ${m.mot || "w"} ${m.flip ? 1 : 0} ${m.rot ?? 0} ${m.anim || "-"} ${m.frame ?? -1}`,
             );
             break;
           case "opp_build":

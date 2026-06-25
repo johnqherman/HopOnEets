@@ -531,6 +531,7 @@ export function startRelay(
             flip: m.flip,
             rot: m.rot ?? 0,
             anim: m.anim ?? "-",
+            frame: m.frame ?? -1,
           });
           break;
         case "build":
