@@ -3,6 +3,6 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install --no-audit --no-fund
 COPY *.ts ./
-ENV PORT=38500 ELO_FILE=/data/elo.json
+ENV PORT=38500 RATING_FILE=/data/elo.json
 EXPOSE 38500
 CMD ["npx", "tsx", "relay.ts"]

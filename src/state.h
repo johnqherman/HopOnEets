@@ -84,7 +84,7 @@ static bool g_online = false;
 static std::string g_relayUrl = "wss://hoe.raccoonlagoon.com";
 static std::string g_playerId =
     "p1";                        // display name (editable); not the identity
-static std::string g_playerUuid; // stable client-generated Elo identity;
+static std::string g_playerUuid; // stable client-generated rating identity;
                                  // persisted, never changes
 static bool g_matched = false, g_ranked = false;
 static std::string g_oppId = "?";
@@ -128,9 +128,9 @@ static double g_winUntil = 0.0;
 static double g_winStart = 0.0;
 static bool g_seriesWon = false;
 static bool g_winForfeit = false;
-static bool g_eloRanked = false;
-static int g_eloOld = 0, g_eloNew = 0;
-static int g_myElo = 0, g_oppElo = 0;
+static bool g_ratingRanked = false;
+static int g_ratingOld = 0, g_ratingNew = 0;
+static int g_myRating = 0, g_oppRating = 0;
 static constexpr double WINSCREEN_SECS = 6.0;
 static int g_lastBuildTick = -1;
 static int g_lastRoundTick = -1;

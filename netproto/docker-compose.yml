@@ -4,7 +4,7 @@ services:
     restart: unless-stopped
     environment:
       - PORT=38500
-      - ELO_FILE=/data/elo.json
+      - RATING_FILE=/data/elo.json # existing volume file; legacy Elo numbers migrate to Glicko on load
     volumes:
       - elo:/data
     ports:

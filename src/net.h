@@ -1,5 +1,4 @@
 #pragma once
-#include <cmath>
 #include <random>
 #include "state.h"
 #include "levels.h"
@@ -37,8 +36,8 @@ static void net_handle(const std::string &ln) {
     }
   } else if (sscanf(ln.c_str(), "oh %ld %llx %39s", &t, &hh, a) == 3)
     note_opp_hash(t, (uint64_t)hh, a);
-  else if (sscanf(ln.c_str(), "elo %d", &iv) == 1)
-    g_myElo = iv;
+  else if (sscanf(ln.c_str(), "rating %d", &iv) == 1)
+    g_myRating = iv;
   else if (strncmp(ln.c_str(), "nocontest", 9) == 0) {
     g_noContest = true;
     long nt = -1;
@@ -56,9 +55,9 @@ static void net_handle(const std::string &ln) {
     }
   } else if (strncmp(ln.c_str(), "obend", 5) == 0)
     g_oppBuildReady = true;
-  // match <selfId> <oppId> <ranked> <levelIndex> <seed> <myElo> <oppElo>
+  // match <selfId> <oppId> <ranked> <levelIndex> <seed> <myRating> <oppRating>
   else if (sscanf(ln.c_str(), "match %39s %39s %d %d %u %d %d", a, b, &rk, &lv,
-                  &sd, &g_myElo, &g_oppElo) >= 2) {
+                  &sd, &g_myRating, &g_oppRating) >= 2) {
     g_matched = true;
     g_ranked = rk != 0;
     g_oppId = b;
@@ -135,7 +134,7 @@ static void net_handle(const std::string &ln) {
     Eets::Log("hop_on_eets: result %s by %s  series %d-%d", w, r, yw, ow);
     snprintf(g_roundMsg, sizeof(g_roundMsg),
              "ONLINE round: %s by %s  series %d-%d", w, r, yw, ow);
-    // series <winner> <youWins> <ghostWins> <ranked> <eloOld> <eloNew>
+    // series <winner> <youWins> <ghostWins> <ranked> <ratingOld> <ratingNew>
     // <forfeit>
   } else if (strncmp(ln.c_str(), "series ", 7) == 0) {
     char w[16] = {0};
@@ -147,11 +146,11 @@ static void net_handle(const std::string &ln) {
     g_interRound = false;
     g_seriesWon = (strcmp(w, "you") == 0);
     g_winForfeit = ff != 0;
-    g_eloRanked = rk != 0;
-    g_eloOld = eo;
-    g_eloNew = en;
-    if (g_eloRanked && en > 0)
-      g_myElo = en;
+    g_ratingRanked = rk != 0;
+    g_ratingOld = eo;
+    g_ratingNew = en;
+    if (g_ratingRanked && en > 0)
+      g_myRating = en;
     g_showdownKind = 0;
     g_pendingShowdown = 0;
     g_winShow = true;
@@ -256,37 +255,13 @@ static void set_player_name(const std::string &raw) {
     net_sendline("hello " + g_playerUuid + " " + g_playerId);
 }
 
-// leave match: "forfeit" line marks the drop intentional -> immediate award
-// (opponent takes series +ranked elo), no reconnect hold
+// leave the match: the relay resolves it immediately (opponent wins) and sends us series_over with the
+// real new rating, which drives the DEFEAT screen. no client-side prediction, no reconnect hold.
 static void forfeit_match() {
-  net_sendline("forfeit");
   g_reconnectUntil = 0.0;
-  net_close();
-  g_seriesWon = false;
-  g_winForfeit = true;
-  if (g_ranked && g_myElo > 0 &&
-      g_oppElo >
-          0) { // predict rating hit (relay authoritative; same Elo formula)
-    double expOpp =
-        1.0 /
-        (1.0 + pow(10.0, (g_myElo - g_oppElo) /
-                             400.0)); // opp's expected score (they win forfeit)
-    g_eloRanked = true;
-    g_eloOld = g_myElo;
-    g_eloNew = (int)(g_myElo - 32.0 * (1.0 - expOpp) + 0.5);
-  } else
-    g_eloRanked = false;
-  g_winShow = true;
-  g_winStart = Time();
-  g_winUntil = Time() + WINSCREEN_SECS;
-  g_interRound = false;
-  g_roundMsg[0] = 0;
-  g_seriesOver = false;
-  g_seriesMsg[0] = 0;
-  g_showdownKind = 0;
-  g_pendingShowdown = 0;
   g_confirmForfeit = false;
-  snprintf(g_netMsg, sizeof(g_netMsg), "forfeited");
+  net_sendline("forfeit");
+  snprintf(g_netMsg, sizeof(g_netMsg), "forfeiting...");
 }
 
 // mid-match drop recovery: retry reconnect; relay holds match ~20s then
@@ -388,7 +363,7 @@ static void flag_desync(long tick, uint64_t local, uint64_t opp) {
     }
 }
 
-// stable 128-bit hex id (not the spoofable display name) is the ranked Elo
+// stable 128-bit hex id (not the spoofable display name) is the ranked rating
 // identity; mixes time + stack address so a weak random_device (some mingw
 // builds) still yields a distinct id per install
 static std::string gen_uuid() {
@@ -402,7 +377,7 @@ static std::string gen_uuid() {
   return std::string(buf);
 }
 
-// mod bootstrap (from EetsMod_Init): read hidden dev knobs, establish Elo
+// mod bootstrap (from EetsMod_Init): read hidden dev knobs, establish the rating
 // identity, adopt profile name, connect to relay
 static void mod_init() {
   auto cfgI = [](const char *k, int d) {

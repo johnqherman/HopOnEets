@@ -31,12 +31,12 @@ static void draw_showdown() {
     DrawTextOutlined(sw / 2 - 26, cy - 24, "VS", FONT_HUGE, yellow);
     int nameY = eetsY - th / 2 - 26;
     char ln[48], rn[48];
-    if (g_ranked && g_myElo > 0)
-      snprintf(ln, sizeof(ln), "%s (%d)", g_playerId.c_str(), g_myElo);
+    if (g_ranked && g_myRating > 0)
+      snprintf(ln, sizeof(ln), "%s (%d)", g_playerId.c_str(), g_myRating);
     else
       snprintf(ln, sizeof(ln), "%s", g_playerId.c_str());
-    if (g_ranked && g_oppElo > 0)
-      snprintf(rn, sizeof(rn), "%s (%d)", g_oppId.c_str(), g_oppElo);
+    if (g_ranked && g_oppRating > 0)
+      snprintf(rn, sizeof(rn), "%s (%d)", g_oppId.c_str(), g_oppRating);
     else
       snprintf(rn, sizeof(rn), "%s", g_oppId.c_str());
     DrawTextOutlined(lcx - (int)strlen(ln) * 8, nameY, ln, FONT_BIG,
@@ -62,7 +62,7 @@ static void draw_showdown() {
   }
 }
 
-// series-end win screen: VICTORY/DEFEAT, score, ranked Elo counting old->new
+// series-end win screen: VICTORY/DEFEAT, score, ranked rating counting old->new
 static void draw_winscreen() {
   int sw = ScreenWidth(), sh = ScreenHeight(), cy = sh / 2;
   GFX_ResetViewOffset();
@@ -80,19 +80,19 @@ static void draw_winscreen() {
   }
   DrawTextOutlined(sw / 2 - (int)strlen(sub) * 8, cy - 56, sub, FONT_BIG,
                    white);
-  if (g_eloRanked) {
+  if (g_ratingRanked) {
     double a = (Time() - g_winStart - 0.6) / 1.8;
     if (a < 0)
       a = 0;
     if (a > 1)
       a = 1; // 0.6s hold, 1.8s count
-    double v = g_eloOld + (g_eloNew - g_eloOld) * a;
+    double v = g_ratingOld + (g_ratingNew - g_ratingOld) * a;
     int shown = (int)(v + 0.5);
     char el[48];
-    snprintf(el, sizeof(el), "ELO %d", shown);
+    snprintf(el, sizeof(el), "RATING %d", shown);
     DrawTextOutlined(sw / 2 - (int)strlen(el) * 8, cy + 6, el, FONT_BIG,
                      Color(255, 232, 40, 255));
-    int d = g_eloNew - g_eloOld;
+    int d = g_ratingNew - g_ratingOld;
     char dl[24];
     snprintf(dl, sizeof(dl), "%+d", d);
     DrawTextOutlined(sw / 2 - (int)strlen(dl) * 8, cy + 46, dl, FONT_BIG,
