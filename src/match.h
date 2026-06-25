@@ -241,6 +241,7 @@ static void match_update() {
               if (!j) { tok[0] = '-'; tok[1] = 0; }
             }
           int frame = Object_GetAnimFrameIndex(e); // exact anim frame -> ghost mirrors it (no looping)
+          if (frame > 0) frame--;                   // engine index is 1-based; DrawAnim wants 0-based
           char pb[110];
           snprintf(pb, sizeof(pb), "pos %ld %.1f %.1f %c %c %d %.3f %s %d",
                    g_tick, ep.x, ep.y, emo, mot, flip, rot, tok, frame);
