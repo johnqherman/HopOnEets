@@ -111,10 +111,10 @@ What's done, what's left, in priority order. Pairs with the spec
       (`level_index`); exit-on-done with a verdict exit code + `HOE_RESIM_*` env overrides. Headless
       launcher `tools/resim-runner.sh` (xvfb + dummy audio, watch verdict, exit code). `netproto/verifier.ts`
       = `verifyMatch` + `ResimRunner` (Mock + Shell); verify→decide unit-tested (`verifier.test.ts`, in
-      `npm test`). Null FNA3D backend `nullbackend/libnullbackend.so` (`--null`, all 29 imports stubbed,
-      unvalidated). Relay→verifier handoff: clients `submit_replay` (base64 log), relay calls the injected
+      `npm test`). Relay→verifier handoff: clients `submit_replay` (base64 log), relay calls the injected
       `RankedVerifier` on a ranked round and emits `authoritative`; relay CLI enables it when `EETS_DIR` set.
-      e2e-covered. REMAINING: Win canonical build (needs Win level addrs); in-game validation (incl. `--null`).
+      e2e-covered. NOTE: authoritative re-sim was DROPPED 2026-06-24 (dormant/off in prod) — mid-sim interaction
+      is a core mechanic the build-only re-sim can't reproduce; the null FNA3D backend was removed (Xvfb works).
 - [ ] Replay submission + storage on the server
 
 ## 5. Content & polish

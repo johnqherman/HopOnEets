@@ -66,24 +66,15 @@ stale verdict, export the env, launch the game under **xvfb** (when there's no `
 exit with the mod's code. xvfb (Option B) is the working default — it needs a real GL context but
 no monitor. Option A below (stub FNA3D) removes even the GL dependency and is the future upgrade.
 
-**Option A — null FNA3D backend (BUILT: `nullbackend/`, unvalidated).** `nullbackend/libnullbackend.so`
-shadows the exact 29 `FNA3D_*` entry points Eets imports (enumerated from `eets_addr_win.h`) with no-ops
-returning dummy opaque handles — no GPU, no GL, no framebuffer. SDL's `dummy` video/audio drivers cover
-the rest. `resim-runner.sh --null` `LD_PRELOAD`s it after the loader. Stubs follow the public FNA3D API;
-needs validation against the shipped binary (widen a stub if the game derefs a handle field). Notes:
-Ship a `libnullbackend.so` preloaded *before* the mod that exports stub `FNA3D_*` / `SDL_*`
-symbols satisfying the game's calls but doing nothing visible:
-- `FNA3D_CreateDevice` → a dummy device handle; `FNA3D_SwapBuffers` → returns immediately (still
-  drives the mod's per-frame `Update`, which is all the re-sim needs).
-- `SDL_CreateWindow`/`GL context` → dummy non-null handles; `SDL_PollEvent` → no events.
-- Audio (`FAudio`/`SDL_audio`) → no-op.
-The game still ticks its fixed-timestep sim (decoupled from render — `World_SetFPS`), so the mod
-drives load→apply→start→outcome with zero frames actually drawn. Headless on a server box
-(xvfb not even required if windowing is fully stubbed).
+**Option A — null FNA3D backend (REMOVED 2026-06-24).** A `nullbackend/libnullbackend.so` stubbing the 29
+`FNA3D_*` imports was built but never validated — it SIGSEGV'd in the engine's load-screen draw
+(`EffectsManager::SetMatrix`), and Xvfb (Option B) works, so it was deleted along with the `--null` flag.
 
-**Option B — Xvfb.** Run the real backend under a virtual framebuffer (`xvfb-run ./Eets`). Simpler
-(no symbol stubbing) but heavier and still needs GL; use as the fallback if stubbing FNA3D proves
-fragile.
+**Option B — Xvfb (the only headless path).** Run the real backend under a virtual framebuffer. The screen
+MUST advertise GLX or FNA3D's GL context creation fails silently and the game exits before the menu, so
+`resim-runner.sh` uses `xvfb-run -a -s "-screen 0 1024x768x24 +extension GLX +render -noreset"`. It also
+`LD_PRELOAD`s the native loader (`libeetsmod.so`) — without it only the Lua mods load and the re-sim never
+engages. Needs `xorg-server-xvfb` installed; alternatively run under a real `:0` (pops a window).
 
 **Batch lifecycle.** The verifier needs the process to *exit* after the verdict. Add a re-sim
 follow-up: on `RS_DONE`, request quit (engine quit path TBD — RE `MainMenu`/app-exit, or just
@@ -123,13 +114,12 @@ without the game.
 - [x] Headless launcher (`tools/resim-runner.sh`) — xvfb + dummy audio, watch verdict, exit code.
 - [x] `ResimRunner` + `verifyMatch` (`netproto/verifier.ts`) with a `MockResimRunner`; verify→decide
       unit-tested (`verifier.test.ts`, in `npm test`). `ShellResimRunner` spawns the launcher.
-- [x] Null FNA3D backend (`nullbackend/libnullbackend.so`, `--null`) — Option A; built + covers all 29
-      imports; **unvalidated against the game** (xvfb stays the default until proven).
+- [~] Null FNA3D backend — built but REMOVED 2026-06-24 (SIGSEGV'd in the load-screen draw; Xvfb works).
 - [x] Relay → verifier handoff on ranked completion — clients `submit_replay` (base64 input log); on a
       ranked round the relay calls the injected `RankedVerifier` and emits `authoritative` to both. The
       relay CLI enables it when `EETS_DIR` is set (`makeVerifier(new ShellResimRunner(), save)`). e2e-covered.
 - [ ] Windows canonical build (needs Win `GetLevelManager`/`LoadSimulatorLevel` addrs first).
-- [ ] In-game verification of the whole path (TESTING.md Phase J) — incl. validating `--null`.
+- [ ] In-game verification of the whole path (TESTING.md Phase J) — Xvfb headless.
 
 ## Caveat
 

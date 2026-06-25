@@ -12,14 +12,12 @@
 # Prints the verdict JSON to stdout; exits with the mod's code. Pair with netproto/verifier.ts.
 set -euo pipefail
 
-log_in=""; game_dir="${EETS_DIR:-}"; level=""; timeout_s=180; use_null=0
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+log_in=""; game_dir="${EETS_DIR:-}"; level=""; timeout_s=180
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -d) game_dir="$2"; shift 2;;
     -l) level="$2"; shift 2;;
     -t) timeout_s="$2"; shift 2;;
-    --null) use_null=1; shift;;          # use the null FNA3D backend instead of xvfb (no GL needed)
     -*) echo "unknown flag: $1" >&2; exit 2;;
     *)  log_in="$1"; shift;;
   esac
@@ -52,19 +50,12 @@ loader_so="${EETSMOD_LOADER:-$game_dir/libeetsmod.so}"
 [[ -f "$loader_so" ]] || echo "warning: native loader not found ($loader_so); set EETSMOD_LOADER - else the mod won't load" >&2
 
 runner=()
-if [[ $use_null -eq 1 ]]; then
-  # null FNA3D backend: no GL context, no window, no framebuffer needed
-  nb="${NULLBACKEND:-$here/../nullbackend/libnullbackend.so}"
-  [[ -f "$nb" ]] || { echo "null backend not built: $nb (run 'make -C nullbackend')" >&2; exit 2; }
-  export SDL_VIDEODRIVER=dummy
-  export LD_PRELOAD="${LD_PRELOAD:+$LD_PRELOAD:}$nb"   # AFTER the loader, so its SwapBuffers interpose chains here
-  echo "resim: null FNA3D backend ($nb), SDL dummy video" >&2
-elif [[ -z "${DISPLAY:-}" ]]; then
+if [[ -z "${DISPLAY:-}" ]]; then
   # xvfb path (validated default): real GL backend under a virtual framebuffer. The screen MUST advertise
   # GLX (+extension GLX +render) or FNA3D's GL context creation fails silently and the game exits before the
   # menu - a bare `xvfb-run -a` (no GLX) does exactly that.
   if command -v xvfb-run >/dev/null; then runner=(xvfb-run -a -s "-screen 0 1024x768x24 +extension GLX +render -noreset")
-  else echo "warning: no DISPLAY, no xvfb-run, and not --null; the GL backend may fail." >&2; fi
+  else echo "warning: no DISPLAY and no xvfb-run; the GL backend may fail. Install xorg-server-xvfb or run under :0." >&2; fi
 fi
 
 echo "resim: $game_bin  log=$log_abs  level=${level:-from-log}  timeout=${timeout_s}s" >&2
