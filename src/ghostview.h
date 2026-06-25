@@ -79,8 +79,8 @@ static void draw_ghost(float dt) {
     return;
   int sx = (int)gx,
       sy = (int)gy; // identity world->screen (single-screen levels)
-  // foot-anchor: draw the sprite bottom-centre at (sx, footY) so varying-height sprites stay grounded
-  // (no float on emotion swap / sink); footY tuned so the feet sit on the ground (was a fixed -32 centre).
+  // foot-anchor: draw the sprite bottom-center at (sx, footY) so varying-height sprites stay grounded
+  // (no float on emotion swap / sink); footY tuned so the feet sit on the ground (was a fixed -32 center).
   int footY = sy + 36; // anchor->feet gap (sprite-height independent via footAnchor); tuned: 28 high / 44 low
   Color tint(255, 255, 255, GHOST_ALPHA);
   bool drew = false;
