@@ -228,24 +228,18 @@ static void match_update() {
           read_eets_anim(e, emo, mot, flip);
           Vector2 fac = Object_GetFacing(e);
           float rot = atan2f(fac.y, fac.x); // engine's GetRotation = orientation off +x; mirrors tumbling
-          // the actual current motion (covers eat/land/emote/whale/turn the emo+mot enum misses); single
-          // space-free token. "-" if unavailable.
-          char tok[32] = "-";
-          if (MotionModel *mm = Object_GetMotionModel(e))
-            if (const char *nm = MotionModel_GetCurrentMotionName(mm))
-              if (nm[0]) {
-                size_t j = 0;
-                for (const char *p = nm; *p && j < sizeof(tok) - 1; ++p)
-                  if ((unsigned char)*p > ' ')
-                    tok[j++] = *p;
-                tok[j] = 0;
-                if (!j) tok[0] = '-', tok[1] = 0;
-              }
-          static char s_lastTok[32] = ""; // probe: log the motion token when it changes (confirm format)
-          if (strcmp(tok, s_lastTok) != 0) {
-            snprintf(s_lastTok, sizeof(s_lastTok), "%s", tok);
-            Eets::Log("hop_on_eets: motion token = '%s' (emo=%c)", tok, emo);
-          }
+          // the actual current ANIM base name (e.g. "eets_happy_squat"), covering eat/land/windup/etc the
+          // emo+mot enum misses. single space-free token, "-" if unavailable.
+          char tok[40] = "-";
+          if (const char *nm = Object_GetCurrentAnimName(e))
+            if (nm[0]) {
+              size_t j = 0;
+              for (const char *p = nm; *p && j < sizeof(tok) - 1; ++p)
+                if ((unsigned char)*p > ' ')
+                  tok[j++] = *p;
+              tok[j] = 0;
+              if (!j) { tok[0] = '-'; tok[1] = 0; }
+            }
           int frame = Object_GetAnimFrameIndex(e); // exact anim frame -> ghost mirrors it (no looping)
           char pb[110];
           snprintf(pb, sizeof(pb), "pos %ld %.1f %.1f %c %c %d %.3f %s %d",
