@@ -1,8 +1,7 @@
-// ghostview.h - draw the opponent (live or recorded) and their build as in-level ghosts.
+// ghostview.h - draw the LIVE opponent and their build as in-level ghosts (no recorded playback).
 // world == screen on single-screen levels (identity GFX view); see hop_on_eets.cpp header note.
 #pragma once
 #include "state.h"
-#include "recorder.h"   // ghost_pos_at
 
 static void draw_ghost_marker(int sx, int sy) {
 	Color body(170, 215, 255, 115), edge(220, 240, 255, 180), eye(25, 35, 70, 210);
@@ -40,27 +39,21 @@ static std::string live_anim_path() {
 
 static void draw_ghost(float dt) {
 	if (!g_showGhost) return;
-	float gx, gy;
-	// realtime opponent (takes priority over a recorded ghost), but only while frames are fresh - once they
-	// stop streaming (their round ended / they're not simulating) the ghost clears instead of lingering.
-	bool live = (g_matched && g_liveValid && (Time() - g_liveLastTime) < 0.4);
-	if (live) { gx = g_liveX; gy = g_liveY; }
-	else if (!g_haveGhost || !ghost_pos_at(g_tick, gx, gy)) return;
+	// the ghost is the LIVE opponent only (no recorded playback) - and only while frames are fresh, so once
+	// they stop streaming (their round ended / they're not simulating) it clears instead of lingering.
+	if (!(g_matched && g_liveValid && (Time() - g_liveLastTime) < 0.4)) return;
+	float gx = g_liveX, gy = g_liveY;
 	if (!valid_pos(gx, gy)) return;                // garbage guard
 	int sx = (int)gx, sy = (int)gy;                // identity world->screen (single-screen levels)
-	// live opponent: mirror their exact emotion x motion x facing. recorded ghost: the chosen sprite.
-	std::string animPath = live ? live_anim_path() : g_ghostAnim;
-	bool flip = live && g_liveFlip;
+	std::string animPath = live_anim_path();       // mirror their exact emotion x motion x facing
 	bool drew = false;                             // animated, semi-transparent Eets
 	if (!animPath.empty())
-		drew = DrawAnim(animPath.c_str(), sx - 32, sy - 32, dt, 0.0f, Color(255, 255, 255, GHOST_ALPHA), flip);
+		drew = DrawAnim(animPath.c_str(), sx - 32, sy - 32, dt, 0.0f, Color(255, 255, 255, GHOST_ALPHA), g_liveFlip);
 	if (!drew) draw_ghost_marker(sx, sy);          // fallback if the anim path doesn't resolve on this install
 	char lbuf[48];
 	const char* nm = g_oppId.empty() ? "OPPONENT" : g_oppId.c_str();
-	const char* label;
-	if (!live) label = "GHOST";
-	else if (g_ranked && g_oppElo > 0) { snprintf(lbuf, sizeof(lbuf), "%s (%d)", nm, g_oppElo); label = lbuf; }
-	else label = nm;
+	const char* label = nm;
+	if (g_ranked && g_oppElo > 0) { snprintf(lbuf, sizeof(lbuf), "%s (%d)", nm, g_oppElo); label = lbuf; }
 	DrawTextOutlined(sx - (int)strlen(label) * 4, sy - 48, label, FONT_SMALL, Color(180, 220, 255, 255));
 }
 // the opponent's locked-in build, drawn as translucent ghost items

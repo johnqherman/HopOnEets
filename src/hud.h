@@ -100,16 +100,6 @@ static void draw_hud() {
 				DrawTextOutlined(840, 30, rc, FONT_NORMAL, left < 20 ? Color(255, 90, 80, 255) : Color(150, 220, 255, 255));
 			}
 			if (g_matched) { char on[96]; snprintf(on, sizeof(on), "ONLINE vs %s%s", g_oppId.c_str(), g_ranked ? " [RANKED]" : ""); DrawTextOutlined(10, 112, on, FONT_NORMAL, Color(150, 220, 255, 255)); }
-			if (g_phase == SIM && g_haveGhost && g_ghostFinish > 0) {
-				int bx = 10, by = 52, bw = 280, bh = 14;
-				float meFrac = (float)g_tick / (float)g_ghostFinish; if (meFrac > 1.f) meFrac = 1.f;
-				FillRect(bx, by, bw, bh, Color(0, 0, 0, 140));
-				FillRect(bx, by, (int)(bw * meFrac), bh, Color(80, 220, 90, 255));
-				DrawRect(bx, by, bw, bh, Color(0, 0, 0, 255), 2.f);
-				bool ahead = g_finishTick < 0 ? (g_tick <= g_ghostFinish) : (g_finishTick < g_ghostFinish);
-				char gb[96]; snprintf(gb, sizeof(gb), "vs ghost %.2fs  [%s]", g_ghostFinish / (double)TICK_RATE, ahead ? "AHEAD" : "BEHIND");
-				DrawTextOutlined(bx + bw + 10, by - 2, gb, FONT_NORMAL, ahead ? Color(120, 255, 120, 255) : Color(255, 140, 90, 255));
-			}
 			if (g_roundMsg[0]) DrawTextOutlined(10, 74, g_roundMsg, FONT_NORMAL, Color(255, 255, 255, 255));
 			if (g_desync || g_noContest) { char db[80]; snprintf(db, sizeof(db), g_noContest ? "NO CONTEST (desync) - not ranked" : "DESYNC @t%ld - result withheld", g_desyncTick); DrawTextOutlined(10, 92, db, FONT_NORMAL, Color(255, 90, 80, 255)); }
 		}   // end !g_interRound overlay

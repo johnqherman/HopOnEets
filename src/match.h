@@ -13,14 +13,14 @@ static void report_finish(bool completed) {
 	g_finishTick = g_tick + g_deathTicks;   // total round time incl. time lost to deaths (the dying penalty)
 	Eets::Log("hop_on_eets: report_finish completed=%d tick=%ld matched=%d ranked=%d", completed ? 1 : 0, g_finishTick, g_matched ? 1 : 0, g_ranked ? 1 : 0);
 	report_determinism();
-	write_replay(completed); write_ghost(g_replayCounter, completed); write_result(completed);
-	if (g_matched) {
+	if (g_matched) {   // the relay scores the series from both players' finishes (it's authoritative online)
 		char fb[80]; snprintf(fb, sizeof(fb), "finish %ld %d %d %d", g_finishTick, completed ? 1 : 0, placed_count(), g_deaths);
 		net_sendline(fb);
-		if (g_ranked) net_submit_replay(completed);   // ranked: upload the input log for authoritative re-sim
+	} else {           // solo practice: just note the time (no recording, no ghost)
+		snprintf(g_roundMsg, sizeof(g_roundMsg), "round: %.2fs", g_finishTick / (double)TICK_RATE);
 	}
 	if (g_resimState == RS_RUNNING) resim_on_complete();
-	g_replayCounter++; g_roundCounter++;
+	g_roundCounter++;
 	if (g_matched) {
 		g_interRound = true;              // suppress overlay draws until the next round's level loads (avoids the
 		                                  // vanilla victory-screen transition crashing our GraphicsEngine draws)

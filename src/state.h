@@ -33,15 +33,13 @@ static const char* MOD = "hop_on_eets";
 // ---- fixed competitive constants (same for every player; not configurable) ----
 static constexpr int TICK_RATE     = 60;     // engine fixed timestep (Hz)
 static constexpr int HASH_INTERVAL = 30;     // desync state-hash cadence (ticks)
-static constexpr bool g_autoRecord = true;   // always record the run (ranked replay submission needs it)
 static constexpr bool g_autoLoad   = true;   // always auto-load the matched level + ready-up
 static bool g_pinSeed     = false;           // solo determinism self-test only (cfg pin_seed; matches always pin via g_matched)
 static uint32_t g_seed    = 123456789u;
-static bool g_showGhost   = true;            // head-to-head: the opponent is always drawn
-// the opponent's static-fallback sprite (the live ghost picks a per-emotion/motion .anim at draw time)
+static bool g_showGhost   = true;            // head-to-head: the live opponent is always drawn
+// the Eets sprite shown in the VS showdown cinematic (the in-level live ghost picks a per-emotion/motion .anim)
 static const std::string g_ghostAnim = "DATA:Animations/Eets/eets_happy_walk.anim";
-static std::string g_ghostFile;              // dormant solo-replay ghost path (no longer configurable)
-static const int GHOST_ALPHA = 120;          // ghost transparency tint (0..255)
+static const int GHOST_ALPHA = 120;          // live-ghost transparency tint (0..255)
 // player name cap = the vanilla "ENTER YOUR NAME" field's enforced limit (12 chars)
 static constexpr int MAX_PLAYER_NAME = 12;
 
@@ -57,27 +55,18 @@ static long  g_engineTickBase = -1;    // engine sim-tick counter at sim start; 
 static long  g_lastHashBucket = -1;    // last sampled hash bucket (g_tick / HASH_INTERVAL); sample on bucket change so a tick jump (engine sub-step) can't skip a sample and misalign the determinism compare
 static int   g_resets      = 0;
 static long  g_finishTick  = -1;
-static int   g_replayCounter = 0, g_roundCounter = 0;
-static int   g_youWins = 0, g_ghostWins = 0;
+static int   g_roundCounter = 0;
+static int   g_youWins = 0, g_ghostWins = 0;   // series score: you vs the opponent ("ghost" = the live opponent)
 static char  g_status[160] = "idle";
 static char  g_roundMsg[160] = "";
-static std::string g_lastGhostPath;          // most recent ghost we wrote (for "race last recording")
 
-// ---- recorder data ----
+// ---- recorder data: the player's build placements (shared live to the opponent) + determinism samples ----
 struct Placement { unsigned long long id; std::string blueprint; float x, y; bool removed; bool matched = false; };
 struct Sample    { long tick; float x, y; uint64_t hash; };
 static std::vector<Placement> g_placements;
 static std::vector<Sample>    g_samples;
 static std::vector<uint64_t>  g_prevHashSeq;
 static bool g_prevWasResetRerun = false;
-
-// ---- loaded ghost ----
-static std::vector<Sample> g_ghost;
-static long g_ghostFinish    = -1;
-static bool g_ghostCompleted = false;
-static int  g_ghostItems     = 0;
-static bool g_haveGhost      = false;
-static std::string g_ghostLabel = "none";
 
 // ---- realtime net ----
 static bool g_online = false;
