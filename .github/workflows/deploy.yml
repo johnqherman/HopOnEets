@@ -1,4 +1,4 @@
-name: Deploy relay to VPS
+name: Deploy relay server
 
 on:
   push:
