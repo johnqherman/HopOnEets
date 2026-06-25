@@ -142,13 +142,21 @@ function fakeMod(port: number): Mod {
   const jf = await C.expect((l) => l.startsWith('joinfail '), 'bad join rejected', 1500);
   if (jf) ok('bad code rejected: ' + jf);
 
-  // ---- disconnect = loss: D quits mid-match -> C wins the series ----
-  D.close();
-  const dl = await C.expect((l) => l === 'oppleft', 'C sees opponent left', 2000);
-  if (dl) ok('opponent_left delivered: ' + dl);
-  const dsv = await C.expect((l) => l.startsWith('series '), 'C series_over on disconnect', 2000);
-  if (dsv === 'series you 0 0 1 1000 1016 1') ok('disconnect = ranked series win + elo for C: ' + dsv);
-  else if (dsv) fail('disconnect series wrong: ' + dsv);
+  // ---- mid-match DROP -> reconnect window -> rejoin (not an instant loss) ----
+  D.close();   // a network drop (no 'forfeit' sent): the relay holds the match
+  const od = await C.expect((l) => l.startsWith('oppdrop'), 'C sees opponent dropped', 2000);
+  if (od && od.startsWith('oppdrop ')) ok('drop -> reconnect hold (not a loss): ' + od);
+  else if (od) fail('oppdrop wrong: ' + od);
+  // D reconnects within the window (same uuid 'dave'): the bridge auto-sends hello on relay reconnect -> reattach
+  await sleep(200);
+  const D2 = fakeMod(38694);
+  const rj = await D2.expect((l) => l.startsWith('rejoin '), 'D rejoins the held match', 3000);
+  if (rj && rj.startsWith('rejoin ')) ok('reconnect -> rejoin: ' + rj); else if (rj) fail('rejoin wrong: ' + rj);
+  const opr = await C.expect((l) => l === 'opprejoin', 'C sees opponent rejoined', 2000);
+  if (opr) ok('opponent_rejoined delivered');
+  const rr = await C.expect((l) => l.startsWith('round '), 'round restarts for C', 2000);
+  if (rr) ok('round restarts after reconnect: ' + rr);
+  D2.close();
 
   // ---- ranked: authoritative re-sim handoff (relay -> verifier) ----
   E.send('hello erin'); F.send('hello finn');

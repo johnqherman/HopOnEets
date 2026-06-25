@@ -50,6 +50,7 @@ export function startBridge(opts: BridgeOpts): { tcp: net.Server; close(): void 
       case 'desync': relay.send({ type: 'desync', tick: +a[1] }); break;
       case 'replay': relay.send({ type: 'submit_replay', round: +a[1], platform: a[2], log: a[3] }); break;   // a[3] = base64 input log
       case 'finish': relay.send({ type: 'finish', finish_tick: +a[1], completed: a[2] === '1', items_used: +a[3], deaths: a[4] ? +a[4] : 0 }); break;
+      case 'forfeit': relay.send({ type: 'forfeit' }); break;
     }
   }
 
@@ -77,7 +78,10 @@ export function startBridge(opts: BridgeOpts): { tcp: net.Server; close(): void 
           case 'result':        toMod(`result ${m.winner} ${m.reason} ${m.you_wins} ${m.opp_wins}`); break;
           case 'elo':           toMod(`elo ${m.value ?? 0}`); break;
           case 'series_over':   toMod(`series ${m.winner} ${m.you_wins} ${m.opp_wins} ${m.ranked ? 1 : 0} ${m.elo_old ?? 0} ${m.elo_new ?? 0} ${m.forfeit ? 1 : 0}`); break;
-          case 'opponent_left': toMod('oppleft'); break;
+          case 'opponent_left':     toMod('oppleft'); break;
+          case 'opponent_dropped':  toMod(`oppdrop ${m.seconds ?? 20}`); break;
+          case 'opponent_rejoined': toMod('opprejoin'); break;
+          case 'rejoin':            toMod(`rejoin ${m.opponent} ${m.ranked ? 1 : 0} ${m.you_wins} ${m.opp_wins}`); break;
         }
       });
       conn.onClose(() => { log('relay closed'); relay = null; });

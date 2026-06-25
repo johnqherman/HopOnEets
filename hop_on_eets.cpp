@@ -128,6 +128,7 @@ extern "C" void EetsMod_OnKey(int key, int mods, int down) {
 
 extern "C" void EetsMod_Update() {
 	net_poll();
+	net_reconnect_tick();   // recover from a mid-match network drop (relay holds the match ~20s)
 	if (g_resimState != RS_OFF && g_resimState != RS_DONE) resim_tick();   // drive the headless verifier
 	match_update();   // match lifecycle / state machine (src/match.h)
 	draw_hud();       // all in-game overlay drawing (src/hud.h)

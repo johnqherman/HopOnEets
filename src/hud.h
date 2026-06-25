@@ -69,6 +69,13 @@ static void draw_winscreen() {
 
 static void draw_hud() {
 	if (g_winShow && Time() < g_winUntil) { draw_winscreen(); return; }   // win screen owns the whole frame
+	if (g_matched && (!net_up() || g_oppDropped)) {   // reconnect / opponent-dropped banner, over the level
+		GFX_ResetViewOffset();
+		char b[64];
+		if (!net_up()) snprintf(b, sizeof(b), "RECONNECTING...");
+		else { int left = (int)(g_oppDropUntil - Time()); if (left < 0) left = 0; snprintf(b, sizeof(b), "OPPONENT DROPPED  %ds", left); }
+		DrawTextOutlined(ScreenWidth() / 2 - (int)strlen(b) * 8, ScreenHeight() / 2 - 100, b, FONT_BIG, Color(255, 200, 80, 255));
+	}
 	if (in_level()) {
 		bool inMatch = (g_matched || g_matchActive);
 		if (g_showdownKind != 0 && Time() < g_showdownUntil) { draw_showdown(); return; }   // cinematic owns the screen - no other overlay

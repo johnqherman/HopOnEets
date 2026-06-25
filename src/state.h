@@ -96,6 +96,11 @@ static bool  g_liveFlip    = false; // facing (mirrored)
 static bool g_codeEntry = false; static std::string g_codeBuf;   // in-menu join-code entry
 static bool g_nameEntry = false; static std::string g_nameBuf;   // in-menu online-name entry
 static bool g_confirmForfeit = false;   // two-step guard on the leave-&-forfeit button
+// reconnect window: a mid-match network drop holds the relay match briefly so we can rejoin
+static bool   g_oppDropped     = false;   // the opponent dropped; relay is holding the match
+static double g_oppDropUntil    = 0.0;    // when the opponent's reconnect window ends (for the banner)
+static double g_reconnectUntil  = 0.0;    // we dropped: keep retrying until this time, then give up to the menu
+static double g_lastReconnectTry = 0.0;
 static bool g_nameManual = false;   // true once the player types a custom name (overrides the vanilla profile name; persisted as save key player_id)
 // pre-match / between-round showdown overlay (cinematic beat so round starts feel less abrupt)
 static int    g_showdownKind     = 0;   // 0=none, 1=match-start (VS + two Eets), 2=between-rounds (ROUND N)

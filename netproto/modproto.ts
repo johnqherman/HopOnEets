@@ -21,6 +21,7 @@ export function modLineToMsg(line: string, fallbackName = 'anon'): any | null {
     case 'desync':   return { type: 'desync', tick: +a[1] };
     case 'replay':   return { type: 'submit_replay', round: +a[1], platform: a[2], log: a[3] };
     case 'finish':   return { type: 'finish', finish_tick: +a[1], completed: a[2] === '1', items_used: +a[3], deaths: a[4] ? +a[4] : 0 };
+    case 'forfeit':  return { type: 'forfeit' };
     default:         return null;
   }
 }
@@ -43,7 +44,10 @@ export function msgToModLine(m: any): string | null {
     case 'result':        return `result ${m.winner} ${m.reason} ${m.you_wins} ${m.opp_wins}`;
     case 'elo':           return `elo ${m.value ?? 0}`;
     case 'series_over':   return `series ${m.winner} ${m.you_wins} ${m.opp_wins} ${m.ranked ? 1 : 0} ${m.elo_old ?? 0} ${m.elo_new ?? 0} ${m.forfeit ? 1 : 0}`;
-    case 'opponent_left': return 'oppleft';
-    default:              return null;
+    case 'opponent_left':     return 'oppleft';
+    case 'opponent_dropped':  return `oppdrop ${m.seconds ?? 20}`;
+    case 'opponent_rejoined': return 'opprejoin';
+    case 'rejoin':            return `rejoin ${m.opponent} ${m.ranked ? 1 : 0} ${m.you_wins} ${m.opp_wins}`;
+    default:                  return null;
   }
 }

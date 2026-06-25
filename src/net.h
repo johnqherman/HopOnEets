@@ -33,7 +33,7 @@ static void net_handle(const std::string& ln) {
 	else if (strncmp(ln.c_str(), "obend", 5) == 0) g_oppBuildReady = true;
 	else if (sscanf(ln.c_str(), "match %39s %39s %d %d %u %d %d", a, b, &rk, &lv, &sd, &g_myElo, &g_oppElo) >= 2) {
 		g_matched = true; g_ranked = rk != 0; g_oppId = b; g_levelIndex = lv; if (sd) g_seed = sd; g_liveValid = false; g_oppBuild.clear(); g_oppBuildReady = false;
-		g_noContest = false; g_desync = false; g_oppHashes.clear(); g_winForfeit = false; g_lastRoundWin = 0;   // fresh match: clear desync/forfeit/round state
+		g_noContest = false; g_desync = false; g_oppHashes.clear(); g_winForfeit = false; g_lastRoundWin = 0; g_oppDropped = false; g_reconnectUntil = 0.0;   // fresh match: clear desync/forfeit/round/drop state
 		g_seriesOver = false; g_seriesMsg[0] = 0;   // clear the previous series banner
 		snprintf(g_netMsg, sizeof(g_netMsg), "matched vs %s%s", b, g_ranked ? " [ranked]" : "");
 		g_menuOpen = false;   // a match started: close the F6 menu
@@ -79,7 +79,17 @@ static void net_handle(const std::string& ln) {
 		g_winShow = true; g_winStart = Time(); g_winUntil = Time() + WINSCREEN_SECS;   // win screen, then auto-return to menu
 		PlaySound(g_seriesWon ? "Fanfare" : "Error");
 		g_seriesOver = false; g_seriesMsg[0] = 0;   // replaced by the win screen
-	} else if (strncmp(ln.c_str(), "oppleft", 7) == 0) { g_matched = false; g_liveValid = false; g_interRound = false; snprintf(g_netMsg, sizeof(g_netMsg), "opponent left"); }
+	} else if (sscanf(ln.c_str(), "oppdrop %d", &iv) == 1) {   // opponent dropped; relay holds the match for a reconnect window
+		g_oppDropped = true; g_oppDropUntil = Time() + iv; g_liveValid = false;
+		snprintf(g_netMsg, sizeof(g_netMsg), "opponent dropped - waiting %ds", iv);
+	} else if (strncmp(ln.c_str(), "opprejoin", 9) == 0) {   // opponent reconnected
+		g_oppDropped = false; snprintf(g_netMsg, sizeof(g_netMsg), "opponent reconnected");
+	} else if (sscanf(ln.c_str(), "rejoin %39s %d %d %d", a, &rk, &iv, &lv) >= 1) {   // WE reconnected into a held match
+		g_matched = true; g_ranked = rk != 0; g_oppId = a; g_youWins = iv; g_ghostWins = lv;
+		g_reconnectUntil = 0.0; g_winShow = false; g_oppDropped = false; g_liveValid = false;
+		snprintf(g_netMsg, sizeof(g_netMsg), "reconnected vs %s", a);
+		// the relay sends the round's countdown next -> the round restarts from build
+	} else if (strncmp(ln.c_str(), "oppleft", 7) == 0) { g_matched = false; g_liveValid = false; g_interRound = false; g_oppDropped = false; snprintf(g_netMsg, sizeof(g_netMsg), "opponent left"); }
 }
 
 // ---- transport: a direct WebSocket to the relay (ws:// or wss://); framing/TLS live in ws_client.h.
@@ -132,6 +142,8 @@ static void set_player_name(const std::string& raw) {
 // leave the current match: dropping the connection is a forfeit (the relay awards the remaining player the
 // series on disconnect), then reconnect as a fresh idle client so the player can queue again.
 static void forfeit_match() {
+	net_sendline("forfeit");             // tell the relay this is intentional -> immediate award, no reconnect hold
+	g_reconnectUntil = 0.0;              // don't auto-reconnect after an intentional leave
 	net_close();                         // disconnect = loss; the relay awards the opponent the series (+ranked elo)
 	// show a DEFEAT result screen (by forfeit), then auto-return to the menu - same flow as a normal loss.
 	// We've disconnected, so we have no elo for ourselves; just show the forfeit.
@@ -144,6 +156,27 @@ static void forfeit_match() {
 	g_interRound = false; g_roundMsg[0] = 0; g_seriesOver = false; g_seriesMsg[0] = 0;
 	g_showdownKind = 0; g_pendingShowdown = 0; g_confirmForfeit = false;
 	snprintf(g_netMsg, sizeof(g_netMsg), "forfeited");
+}
+
+// mid-match drop recovery: if the socket dropped while we're still in a match, keep retrying to reconnect
+// (the relay holds the match ~20s, then `rejoin` reattaches us and restarts the round). If we can't get
+// back in before the window passes, give up to the main menu.
+static void net_reconnect_tick() {
+	if (!g_matched || g_winShow) return;
+	if (net_up() && g_reconnectUntil == 0.0) return;   // normal connected state - nothing to do
+	double now = Time();
+	if (g_reconnectUntil == 0.0) g_reconnectUntil = now + 25.0;   // just dropped: open the give-up window (relay's 20s + margin)
+	if (now > g_reconnectUntil) {   // window passed with no rejoin -> the match is gone
+		g_matched = false; g_reconnectUntil = 0.0; g_oppDropped = false; g_interRound = false; g_phase = IDLE; g_menuOpen = false;
+		snprintf(g_netMsg, sizeof(g_netMsg), "disconnected");
+		World_StartMainMenu();
+		return;
+	}
+	if (!net_up() && now - g_lastReconnectTry >= 1.0) {   // retry the socket until the relay reattaches us
+		g_lastReconnectTry = now;
+		snprintf(g_netMsg, sizeof(g_netMsg), "reconnecting...");
+		net_connect();   // hello -> relay reattaches if the match is still held (-> rejoin + round)
+	}
 }
 
 // connect on demand, then send a command line to the bridge

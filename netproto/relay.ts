@@ -10,7 +10,9 @@ import { modLineToMsg, msgToModLine } from './modproto';   // mod text protocol 
 import type { RankedVerifier } from './verifier';   // type-only (verifier imports decideOutcome from here)
 
 export interface Finish { completed: boolean; finish_tick: number; items_used: number; deaths?: number; }
-interface Peer { id: string; name: string; match: string | null; opp: ws.WSConn | null; finish: Finish | null; hostCode: string | null; wins: number; ready: boolean; noContest: boolean; ranked: boolean; platform: string; log: string | null; roundTimer: ReturnType<typeof setTimeout> | null; }
+interface Peer { id: string; name: string; match: string | null; opp: ws.WSConn | null; finish: Finish | null; hostCode: string | null; wins: number; ready: boolean; noContest: boolean; ranked: boolean; platform: string; log: string | null; roundTimer: ReturnType<typeof setTimeout> | null; forfeited: boolean; }
+// a match held open while a dropped player has a chance to reconnect (keyed by their uuid)
+interface Held { oppConn: ws.WSConn; match: string; dropWins: number; ranked: boolean; timer: ReturnType<typeof setTimeout>; }
 // id = a stable client-generated UUID (the Elo key; names are mutable/spoofable so they must NOT key Elo).
 // name = the display name (the player's profile name), shown to the opponent but never used for identity.
 export interface RelayOpts { verify?: RankedVerifier; }   // when set, ranked rounds are re-sim-verified (authoritative)
@@ -56,8 +58,10 @@ export function startRelay(port: number, log: (s: string) => void = () => {}, op
   let nextMatch = 1;
   const BUILD_SECONDS = 45;    // synced build phase; both clients start their timer on `countdown`
   const ROUND_CAP_SECONDS = 180;   // total round wall-clock from countdown (build + play + retries); relay-authoritative + broadcast so both clients show an aligned clock. On expiry, unfinished peers are DNF'd.
+  const RECONNECT_SECONDS = 20;    // a dropped (not forfeited) player has this long to reconnect and resume the series
   const peers = new Map<ws.WSConn, Peer>();
   const rooms = new Map<string, ws.WSConn>();
+  const held = new Map<string, Held>();   // uuid -> a match held open for reconnect
 
   function makeCode(): string {
     const al = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous 0/O/1/I
@@ -195,14 +199,27 @@ export function startRelay(port: number, log: (s: string) => void = () => {}, op
   const server = http.createServer((_req, res) => { res.writeHead(426); res.end('upgrade required'); });
   server.on('upgrade', (req, socket) => {
     const conn = ws.accept(req, socket as net.Socket);
-    peers.set(conn, { id: '?', name: '?', match: null, opp: null, finish: null, hostCode: null, wins: 0, ready: false, noContest: false, ranked: false, platform: '', log: null, roundTimer: null });
+    peers.set(conn, { id: '?', name: '?', match: null, opp: null, finish: null, hostCode: null, wins: 0, ready: false, noContest: false, ranked: false, platform: '', log: null, roundTimer: null, forfeited: false });
     const dispatch = (m: any) => {
       const p = peers.get(conn); if (!p) return;
       switch (m.type) {
-        case 'hello':
+        case 'hello': {
           p.id = String(m.uuid ?? m.player_id ?? 'anon'); p.name = String(m.player_id ?? p.id);
-          conn.send({ type: 'elo', value: getElo(p.id) });   // tell the client its current ranked rating (for the F6 menu)
+          const h = held.get(p.id);                          // reconnecting into a held match?
+          const q = h && peers.get(h.oppConn);
+          if (h && q && q.match === h.match && !q.opp) {      // reattach: swap the live conn back in, resume the series
+            clearTimeout(h.timer); held.delete(p.id);
+            p.match = h.match; p.opp = h.oppConn; p.wins = h.dropWins; p.ranked = h.ranked; p.finish = null; p.ready = false;
+            q.opp = conn; q.finish = null; q.ready = false;
+            conn.send({ type: 'rejoin', match_id: h.match, opponent: q.name, ranked: p.ranked, you_wins: p.wins, opp_wins: q.wins });
+            h.oppConn.send({ type: 'opponent_rejoined' });
+            log(`reconnect ${h.match}: ${p.name} rejoined (series ${p.wins}-${q.wins})`);
+            startRound(conn, h.oppConn, p.wins + q.wins + 1);   // restart the current round for both
+          } else {
+            conn.send({ type: 'elo', value: getElo(p.id) });   // current ranked rating (for the F6 menu)
+          }
           break;
+        }
         case 'host': {
           if (p.hostCode) rooms.delete(p.hostCode);
           const code = makeCode(); p.hostCode = code; rooms.set(code, conn);
@@ -238,6 +255,9 @@ export function startRelay(port: number, log: (s: string) => void = () => {}, op
           log(`no contest ${p.match}: desync @${m.tick | 0}`);
           break;
         }
+        case 'forfeit':   // intentional leave: the following disconnect awards the opponent immediately (no reconnect hold)
+          p.forfeited = true;
+          break;
         case 'submit_replay':   // client uploads its input log (base64) for authoritative re-sim
           p.platform = String(m.platform ?? p.platform); p.log = String(m.log ?? '');
           break;
@@ -266,16 +286,38 @@ export function startRelay(port: number, log: (s: string) => void = () => {}, op
       clearRoundTimer(p);
       queue = queue.filter((c) => c !== conn);
       if (p.hostCode) rooms.delete(p.hostCode);
-      if (p.opp) {
-        const q = peers.get(p.opp);
+      const q = p.opp ? peers.get(p.opp) : undefined;
+      if (p.opp && p.match && q && !p.forfeited) {
+        // unexpected DROP: hold the match open so the player can reconnect and resume the series.
+        clearRoundTimer(q);
+        q.opp = null; q.finish = null;
+        p.opp.send({ type: 'opponent_dropped', seconds: RECONNECT_SECONDS });
+        const oppConn = p.opp, match = p.match, dropWins = p.wins, oppWins = q.wins, leaverId = p.id, leaverName = p.name;
+        const timer = setTimeout(() => {
+          if (held.get(leaverId)?.timer !== timer) return;   // already reattached/handled
+          held.delete(leaverId);
+          const qq = peers.get(oppConn);
+          if (qq && qq.match === match && !qq.opp) {   // window expired with no reconnect -> award the opponent
+            let qE = { old: 0, neu: 0 };
+            if (qq.ranked) { const r = applyElo(qq.id, leaverId); qE = { old: r.wOld, neu: r.wNew }; log(`elo dropout ${match}: ${qq.name} ${qE.old}->${qE.neu}, ${leaverName} ${r.lOld}->${r.lNew}`); }
+            oppConn.send({ type: 'series_over', winner: 'you', you_wins: oppWins, opp_wins: dropWins, ranked: qq.ranked, elo_old: qE.old, elo_new: qE.neu, forfeit: true });
+            qq.opp = null; qq.match = null; qq.wins = 0;
+          }
+        }, RECONNECT_SECONDS * 1000);
+        held.set(p.id, { oppConn: p.opp, match: p.match, dropWins: p.wins, ranked: p.ranked, timer });
+        log(`drop ${p.match}: ${p.name} dropped - ${RECONNECT_SECONDS}s to reconnect`);
+        peers.delete(conn);
+        return;
+      }
+      if (p.opp && q) {   // intentional forfeit, or a non-match disconnect (hosting/queue): resolve/cleanup now
         clearRoundTimer(q);
         p.opp.send({ type: 'opponent_left' });
-        if (p.match && q) {   // disconnect/forfeit = a series loss for the leaver (Elo still applies on ranked)
+        if (p.match) {   // forfeit = a series loss for the leaver (Elo still applies on ranked)
           let qE = { old: 0, neu: 0 };
           if (q.ranked) { const r = applyElo(q.id, p.id); qE = { old: r.wOld, neu: r.wNew }; log(`elo forfeit ${p.match}: ${q.name} ${qE.old}->${qE.neu}, ${p.name} ${r.lOld}->${r.lNew}`); }
           p.opp.send({ type: 'series_over', winner: 'you', you_wins: q.wins, opp_wins: p.wins, ranked: q.ranked, elo_old: qE.old, elo_new: qE.neu, forfeit: true });
         }
-        if (q) { q.opp = null; q.match = null; q.wins = 0; }
+        q.opp = null; q.match = null; q.wins = 0;
       }
       peers.delete(conn);
     });
