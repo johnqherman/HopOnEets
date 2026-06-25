@@ -49,15 +49,24 @@ static void read_eets_anim(Object *e, char &emo, char &mot, int &flip) {
   }
   flip = Object_GetFlipped(e) ? 1 : 0;
 }
-static std::string live_anim_path() {
-  const char *emo = g_liveEmotion == 'a'   ? "angry"
-                    : g_liveEmotion == 's' ? "scared"
-                                           : "happy";
+static const char *live_emo() {
+  return g_liveEmotion == 'a' ? "angry" : g_liveEmotion == 's' ? "scared" : "happy";
+}
+// the opponent's actual current motion token -> .anim (covers eat/land/emote/whale/turn the enum misses);
+// "" if no token streamed (old client / not yet sent)
+static std::string live_token_path() {
+  if (!g_liveAnim[0] || g_liveAnim[0] == '-') return "";
+  std::string t = g_liveAnim;
+  if (t.rfind("eets_", 0) == 0) return "DATA:Animations/Eets/" + t + ".anim"; // already a full base name
+  return std::string("DATA:Animations/Eets/eets_") + live_emo() + "_" + t + ".anim";
+}
+// coarse emotion x motion fallback (when no token resolves)
+static std::string enum_anim_path() {
   const char *mot = g_liveMotion == 'j'   ? "jump"
                     : g_liveMotion == 'f' ? "fall"
                     : g_liveMotion == 's' ? "squat"
                                           : "walk";
-  return std::string("DATA:Animations/Eets/eets_") + emo + "_" + mot + ".anim";
+  return std::string("DATA:Animations/Eets/eets_") + live_emo() + "_" + mot + ".anim";
 }
 
 static void draw_ghost(float dt) {
@@ -70,14 +79,17 @@ static void draw_ghost(float dt) {
     return;
   int sx = (int)gx,
       sy = (int)gy; // identity world->screen (single-screen levels)
-  std::string animPath = live_anim_path();
+  Color tint(255, 255, 255, GHOST_ALPHA);
   bool drew = false;
-  if (!animPath.empty())
-    drew = DrawAnim(animPath.c_str(), sx - 32, sy - 32, dt, 0.0f,
-                    Color(255, 255, 255, GHOST_ALPHA), g_liveFlip);
+  std::string tok = live_token_path(); // opponent's actual current anim, if streamed
+  if (!tok.empty())
+    drew = DrawAnim(tok.c_str(), sx - 32, sy - 32, dt, 0.0f, tint, g_liveFlip,
+                    1.0f, g_liveRot);
+  if (!drew) // token absent/unresolved -> coarse emotion x motion enum
+    drew = DrawAnim(enum_anim_path().c_str(), sx - 32, sy - 32, dt, 0.0f, tint,
+                    g_liveFlip, 1.0f, g_liveRot);
   if (!drew)
-    draw_ghost_marker(sx,
-                      sy); // fallback if anim path unresolved on this install
+    draw_ghost_marker(sx, sy); // last resort if no anim resolves on this install
   char lbuf[48];
   const char *nm = g_oppId.empty() ? "OPPONENT" : g_oppId.c_str();
   const char *label = nm;
