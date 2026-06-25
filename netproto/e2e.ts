@@ -137,11 +137,11 @@ function fakeMod(port: number): Mod {
 
   A.send("pos 10 123 45");
   const g1 = await B.expect((l) => l.startsWith("g "), "B sees A pos");
-  if (g1 === "g 10 123 45 h w 0 0 -") ok("realtime A->B: " + g1);
+  if (g1 === "g 10 123 45 h w 0 0 - -1") ok("realtime A->B: " + g1);
   else if (g1) fail("A->B wrong: " + g1);
   B.send("pos 20 300 60");
   const g2 = await A.expect((l) => l.startsWith("g "), "A sees B pos");
-  if (g2 === "g 20 300 60 h w 0 0 -") ok("realtime B->A: " + g2);
+  if (g2 === "g 20 300 60 h w 0 0 - -1") ok("realtime B->A: " + g2);
   else if (g2) fail("B->A wrong: " + g2);
   // anim state (emotion/motion/facing) rides along
   A.send("pos 12 130 50 a j 1");
@@ -149,7 +149,7 @@ function fakeMod(port: number): Mod {
     (l) => l.startsWith("g 12 "),
     "B sees A anim state",
   );
-  if (ga === "g 12 130 50 a j 1 0 -") ok("opponent anim state relayed: " + ga);
+  if (ga === "g 12 130 50 a j 1 0 - -1") ok("opponent anim state relayed: " + ga);
   else if (ga) fail("anim state wrong: " + ga);
 
   // best-of-3: first to complete wins the round immediately (live race)
@@ -178,7 +178,7 @@ function fakeMod(port: number): Mod {
     fail("ranked match should be ranked=1: " + mc);
   C.send("pos 5 7 9");
   const g3 = await D.expect((l) => l.startsWith("g "), "D sees C pos");
-  if (g3 === "g 5 7 9 h w 0 0 -") ok("realtime C->D: " + g3);
+  if (g3 === "g 5 7 9 h w 0 0 - -1") ok("realtime C->D: " + g3);
   else if (g3) fail("C->D wrong: " + g3);
 
   // ---- checkpoint hash relay + desync = no-contest ----

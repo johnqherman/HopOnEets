@@ -84,10 +84,10 @@ static void draw_ghost(float dt) {
   std::string tok = live_token_path(); // opponent's actual current anim, if streamed
   if (!tok.empty())
     drew = DrawAnim(tok.c_str(), sx - 32, sy - 32, dt, 0.0f, tint, g_liveFlip,
-                    1.0f, g_liveRot);
+                    1.0f, g_liveRot, g_liveFrame); // frame-synced -> no looping
   if (!drew) // token absent/unresolved -> coarse emotion x motion enum
     drew = DrawAnim(enum_anim_path().c_str(), sx - 32, sy - 32, dt, 0.0f, tint,
-                    g_liveFlip, 1.0f, g_liveRot);
+                    g_liveFlip, 1.0f, g_liveRot, g_liveFrame);
   if (!drew)
     draw_ghost_marker(sx, sy); // last resort if no anim resolves on this install
   char lbuf[48];

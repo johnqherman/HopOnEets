@@ -33,6 +33,7 @@ export function modLineToMsg(line: string, fallbackName = "anon"): any | null {
         flip: a[6] ? +a[6] : 0,
         rot: a[7] ? +a[7] : 0,
         anim: a[8] || "-",
+        frame: a[9] !== undefined ? +a[9] : -1,
       };
     case "hash":
       return { type: "hash", tick: +a[1], hash: a[2], platform: a[3] };
@@ -67,7 +68,7 @@ export function msgToModLine(m: any): string | null {
     case "join_failed":
       return `joinfail ${m.code}`;
     case "opp_pos":
-      return `g ${m.tick} ${m.x} ${m.y} ${m.emo || "h"} ${m.mot || "w"} ${m.flip ? 1 : 0} ${m.rot ?? 0} ${m.anim || "-"}`;
+      return `g ${m.tick} ${m.x} ${m.y} ${m.emo || "h"} ${m.mot || "w"} ${m.flip ? 1 : 0} ${m.rot ?? 0} ${m.anim || "-"} ${m.frame ?? -1}`;
     case "opp_build":
       return `ob ${m.name} ${m.x} ${m.y}`;
     case "opp_buildend":
