@@ -44,7 +44,12 @@ rm -f "$verdict"                      # drop any stale verdict so we only read t
 export HOE_RESIM_FILE="$log_abs" HOE_RESIM_EXIT=1
 [[ -n "$level" ]] && export HOE_RESIM_LEVEL="$level"
 export SDL_AUDIODRIVER=dummy          # no audio device needed
-[[ -n "${EETSMOD_LOADER:-}" ]] && export LD_PRELOAD="${EETSMOD_LOADER}${LD_PRELOAD:+:$LD_PRELOAD}"
+# the native loader (libeetsmod.so) is LD_PRELOADed at runtime; the user's normal (Steam) launch does this,
+# so a headless run must too or only the Lua mods load and the re-sim never engages. Default to the loader
+# shipped in the game dir; override with EETSMOD_LOADER.
+loader_so="${EETSMOD_LOADER:-$game_dir/libeetsmod.so}"
+[[ -f "$loader_so" ]] && export LD_PRELOAD="${loader_so}${LD_PRELOAD:+:$LD_PRELOAD}"
+[[ -f "$loader_so" ]] || echo "warning: native loader not found ($loader_so); set EETSMOD_LOADER - else the mod won't load" >&2
 
 runner=()
 if [[ $use_null -eq 1 ]]; then
@@ -55,8 +60,10 @@ if [[ $use_null -eq 1 ]]; then
   export LD_PRELOAD="${LD_PRELOAD:+$LD_PRELOAD:}$nb"   # AFTER the loader, so its SwapBuffers interpose chains here
   echo "resim: null FNA3D backend ($nb), SDL dummy video" >&2
 elif [[ -z "${DISPLAY:-}" ]]; then
-  # xvfb path (validated default): real GL backend under a virtual framebuffer
-  if command -v xvfb-run >/dev/null; then runner=(xvfb-run -a)
+  # xvfb path (validated default): real GL backend under a virtual framebuffer. The screen MUST advertise
+  # GLX (+extension GLX +render) or FNA3D's GL context creation fails silently and the game exits before the
+  # menu - a bare `xvfb-run -a` (no GLX) does exactly that.
+  if command -v xvfb-run >/dev/null; then runner=(xvfb-run -a -s "-screen 0 1024x768x24 +extension GLX +render -noreset")
   else echo "warning: no DISPLAY, no xvfb-run, and not --null; the GL backend may fail." >&2; fi
 fi
 
