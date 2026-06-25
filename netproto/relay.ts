@@ -175,6 +175,10 @@ export function startRelay(
   let nextMatch = 1;
   const BUILD_SECONDS = 45; // synced build phase; clients start timer on `countdown`
   const ROUND_CAP_SECONDS = 180; // round wall-clock after build; relay-authoritative, DNFs unfinished peers on expiry
+  // the client freezes its build clock during the ~4s round-start cinematic, so its real round start (and its
+  // cap clock) lags the countdown by that much. this is grace on the relay backstop so it outlasts the synced
+  // client clocks (which DNF at their displayed 0:00) instead of pre-empting them and ending the round early.
+  const CAP_GRACE_SECONDS = 12;
   const RECONNECT_SECONDS = 20; // dropped (non-forfeit) player has this long to reconnect
   const peers = new Map<ws.WSConn, Peer>();
   const rooms = new Map<string, ws.WSConn>();
@@ -316,7 +320,7 @@ export function startRelay(
     // relay backstops the cap so a stalled/dropped client can't hang the round (cap counts play only)
     const t = setTimeout(
       () => onRoundTimeout(a, b),
-      (BUILD_SECONDS + ROUND_CAP_SECONDS) * 1000,
+      (BUILD_SECONDS + ROUND_CAP_SECONDS + CAP_GRACE_SECONDS) * 1000,
     );
     if (typeof (t as { unref?: () => void }).unref === "function")
       (t as { unref: () => void }).unref();
