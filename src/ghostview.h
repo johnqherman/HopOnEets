@@ -79,17 +79,20 @@ static void draw_ghost(float dt) {
     return;
   int sx = (int)gx,
       sy = (int)gy; // identity world->screen (single-screen levels)
+  // foot-anchor: draw the sprite bottom-centre at (sx, footY) so varying-height sprites stay grounded
+  // (no float on emotion swap / sink); footY tuned so the feet sit on the ground (was a fixed -32 centre).
+  int footY = sy + 28;
   Color tint(255, 255, 255, GHOST_ALPHA);
   bool drew = false;
   // cycle the anim locally (frame -1). frame-sync via g_liveFrame is disabled: the streamed engine frame
   // index doesn't track the live playback frame reliably, so pinning it froze the ghost.
   std::string tok = live_token_path(); // opponent's actual current anim, if streamed
   if (!tok.empty())
-    drew = DrawAnim(tok.c_str(), sx - 32, sy - 32, dt, 0.0f, tint, g_liveFlip,
-                    1.0f, g_liveRot, -1);
+    drew = DrawAnim(tok.c_str(), sx, footY, dt, 0.0f, tint, g_liveFlip, 1.0f,
+                    g_liveRot, -1, true);
   if (!drew) // token absent/unresolved -> coarse emotion x motion enum
-    drew = DrawAnim(enum_anim_path().c_str(), sx - 32, sy - 32, dt, 0.0f, tint,
-                    g_liveFlip, 1.0f, g_liveRot, -1);
+    drew = DrawAnim(enum_anim_path().c_str(), sx, footY, dt, 0.0f, tint,
+                    g_liveFlip, 1.0f, g_liveRot, -1, true);
   if (!drew)
     draw_ghost_marker(sx, sy); // last resort if no anim resolves on this install
   char lbuf[48];

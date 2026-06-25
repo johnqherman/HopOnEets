@@ -120,6 +120,7 @@ static bool g_nameManual =
 static int g_showdownKind = 0; // 0=none, 1=match-start, 2=between-rounds
 static int g_showdownRound = 0;
 static int g_lastRoundWin = 0; // 1=you, -1=opp, 0=none/tie
+static bool g_lastRoundTie = false; // last round was a draw (both DNF) -> replayed; shown on the between-round card
 static int g_pendingShowdown =
     0; // consumed at synced countdown so both clients show together
 static double g_showdownUntil = 0.0;

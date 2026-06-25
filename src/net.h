@@ -83,6 +83,7 @@ static void net_handle(const std::string &ln) {
     g_oppHashes.clear();
     g_winForfeit = false;
     g_lastRoundWin = 0;
+    g_lastRoundTie = false;
     g_oppDropped = false;
     g_reconnectUntil = 0.0;
     g_seriesOver = false;
@@ -142,6 +143,7 @@ static void net_handle(const std::string &ln) {
     g_ghostWins = ow;
     g_lastRoundWin =
         (strcmp(w, "you") == 0) ? 1 : (strcmp(w, "opponent") == 0 ? -1 : 0);
+    g_lastRoundTie = (strcmp(w, "tie") == 0); // both DNF -> draw, round replays
     Eets::Log("hop_on_eets: result %s by %s  series %d-%d", w, r, yw, ow);
     snprintf(g_roundMsg, sizeof(g_roundMsg),
              "ONLINE round: %s by %s  series %d-%d", w, r, yw, ow);
