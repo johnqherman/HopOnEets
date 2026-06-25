@@ -81,13 +81,15 @@ static void draw_ghost(float dt) {
       sy = (int)gy; // identity world->screen (single-screen levels)
   Color tint(255, 255, 255, GHOST_ALPHA);
   bool drew = false;
+  // cycle the anim locally (frame -1). frame-sync via g_liveFrame is disabled: the streamed engine frame
+  // index doesn't track the live playback frame reliably, so pinning it froze the ghost.
   std::string tok = live_token_path(); // opponent's actual current anim, if streamed
   if (!tok.empty())
     drew = DrawAnim(tok.c_str(), sx - 32, sy - 32, dt, 0.0f, tint, g_liveFlip,
-                    1.0f, g_liveRot, g_liveFrame); // frame-synced -> no looping
+                    1.0f, g_liveRot, -1);
   if (!drew) // token absent/unresolved -> coarse emotion x motion enum
     drew = DrawAnim(enum_anim_path().c_str(), sx - 32, sy - 32, dt, 0.0f, tint,
-                    g_liveFlip, 1.0f, g_liveRot, g_liveFrame);
+                    g_liveFlip, 1.0f, g_liveRot, -1);
   if (!drew)
     draw_ghost_marker(sx, sy); // last resort if no anim resolves on this install
   char lbuf[48];
