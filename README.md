@@ -1,4 +1,4 @@
-# eets-multiplayer-mod
+<img width="498" height="323" alt="eets" src="https://github.com/user-attachments/assets/32b49171-952c-469c-80a2-f7511f1df719" />
 
 **Hop On Eets** — multiplayer / ranked competitive mod for _Eets_, built on the
 [`eets-mod-framework`](../eets-mod-framework) (native plugin loader, framework `0.18.0`).
