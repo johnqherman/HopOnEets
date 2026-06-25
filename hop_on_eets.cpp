@@ -1,8 +1,7 @@
 // hop_on_eets.cpp - Hop On Eets: competitive solution-race mod for Eets.
 //
-// v0.1 foundation on top of eets-mod-framework (>=0.18.0); manifest sets `sim = 1`.
-// See docs/hop-on-eets-spec.md. This file is the thin entry layer; the logic lives in src/*.h,
-// all #included into this one translation unit (the framework compiles/packs a single .cpp):
+// Built on eets-mod-framework; manifest sets `sim = 1`. This file is the thin entry layer; the logic
+// lives in src/*.h, all #included into this one translation unit (the framework compiles/packs a single .cpp):
 //   src/state.h       shared config, globals, types, helpers
 //   src/hash.h        FNV-1a state snapshot (determinism / desync)
 //   src/determinism.h pin seed/FPS/det-mode, lock game speed, force-start

@@ -1,5 +1,5 @@
 // hash.h - FNV-1a 64 snapshot of the live object set, for determinism / desync detection.
-// Same-build only: cross-platform hashes differ (FP physics) - see docs/hop-on-eets-spec.md Part 5.
+// Same-build only: cross-platform hashes differ (FP physics is not bit-identical across OS).
 #pragma once
 #include "state.h"
 

@@ -33,7 +33,7 @@ function applyElo(winnerId: string, loserId: string) {
 }
 export type Verdict = { winner: 'you' | 'opponent' | 'tie'; reason: string };
 
-// tiebreakers: completion, then (completers only) finish_tick, deaths, items_used (spec Part 3). If NEITHER
+// tiebreakers: completion, then (completers only) finish_tick, deaths, items_used. If NEITHER
 // player solves the puzzle the round is a draw - a non-solver must never win on finish_tick/items_used, so
 // those tiebreakers only apply when both completed. A draw scores no round win; the relay replays the round
 // (next countdown) until someone solves it.

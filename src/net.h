@@ -1,6 +1,6 @@
-// net.h - realtime net client. mod <-> localhost TCP <-> bridge <-> WebSocket <-> relay.
-// POSIX sockets (Linux) / winsock (Windows, links ws2_32); zero other deps. Two ways in:
-// host/join by code, or ranked matchmaking. See docs/net-protocol.md.
+// net.h - realtime net client. The mod connects directly to the relay over WebSocket/TLS
+// (transport in ws_client.h) and speaks the line protocol below. Two ways in: host/join by
+// code, or ranked matchmaking.
 #pragma once
 #include <cmath>        // pow (forfeit Elo prediction)
 #include "state.h"
@@ -181,7 +181,7 @@ static void net_action(const std::string& cmd) {
 	net_sendline(cmd);
 }
 
-// ---- checkpoint state-hash exchange (spec Part 10) -----------------------------------------
+// ---- checkpoint state-hash exchange (same-platform desync detection) -----------------------
 // Same-platform divergence at the same tick = a real desync (cheat / nondeterminism); cross-platform
 // hashes legitimately differ (FP physics) so we never compare across platforms. On a same-platform
 // mismatch: flag it, withhold the ranked result, report to the relay (-> no-contest), save a diag.

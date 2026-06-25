@@ -113,7 +113,7 @@ static constexpr double WINSCREEN_SECS = 6.0;
 static int    g_lastBuildTick    = -1;  // last whole-second beeped on the build/retry countdown (sub-6s tick sfx)
 static int    g_lastRoundTick    = -1;  // last whole-second beeped on the round clock
 
-// ---- checkpoint state-hash exchange (same-platform desync detection; spec Part 10) ----
+// ---- checkpoint state-hash exchange (same-platform desync detection) ----
 #ifdef _WIN32
 static const char* PLATFORM = "win32";
 #else

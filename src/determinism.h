@@ -1,5 +1,5 @@
 // determinism.h - pin the engine's RNG seed + deterministic mode + fixed timestep, lock vanilla
-// game speed, and force-start the sim. See docs/hop-on-eets-spec.md Part 5.
+// game speed, and force-start the sim.
 #pragma once
 #include "state.h"
 
