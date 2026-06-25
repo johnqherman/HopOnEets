@@ -168,8 +168,14 @@ static void begin_sim(bool fromReset) {
 	ForEachObject([&](Object* o) {
 		if (!o) return;
 		unsigned long long id = Object_GetID(o);
-		for (auto& p : g_placements) if (p.id == id) { Vector2 q = Object_GetPosition(o); p.x = q.x; p.y = q.y; }
+		for (auto& p : g_placements) if (p.id == id) { Vector2 q = Object_GetPosition(o); p.x = q.x; p.y = q.y; p.matched = true; }
 	});
+	// drop placements with no live object: a build reset gives the re-placed items NEW ids, so entries from
+	// prior reset attempts never match here and would otherwise ship as junk (0,0) items. Keep only the final
+	// build = what's actually live at sim start.
+	g_placements.erase(std::remove_if(g_placements.begin(), g_placements.end(),
+	                                   [](const Placement& p) { return !p.matched; }),
+	                   g_placements.end());
 	if (g_matched) {   // share our locked-in build so the opponent can see it as ghost items
 		for (auto& p : g_placements) if (!p.removed && valid_pos(p.x, p.y)) { char bb[96]; snprintf(bb, sizeof(bb), "build %s %.1f %.1f", p.blueprint.c_str(), p.x, p.y); net_sendline(bb); }
 		net_sendline("buildend");

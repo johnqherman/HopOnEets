@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <algorithm>
 #ifdef _WIN32
 #include <windows.h>     // winsock2.h/ws2tcpip.h already included above (must precede windows.h)
 #else
@@ -63,7 +64,7 @@ static char  g_roundMsg[160] = "";
 static std::string g_lastGhostPath;          // most recent ghost we wrote (for "race last recording")
 
 // ---- recorder data ----
-struct Placement { unsigned long long id; std::string blueprint; float x, y; bool removed; };
+struct Placement { unsigned long long id; std::string blueprint; float x, y; bool removed; bool matched = false; };
 struct Sample    { long tick; float x, y; uint64_t hash; };
 static std::vector<Placement> g_placements;
 static std::vector<Sample>    g_samples;
