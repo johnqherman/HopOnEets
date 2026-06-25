@@ -73,7 +73,7 @@ static void draw_hud() {
 		GFX_ResetViewOffset();
 		char b[64];
 		if (!net_up()) snprintf(b, sizeof(b), "RECONNECTING...");
-		else { int left = (int)(g_oppDropUntil - Time()); if (left < 0) left = 0; snprintf(b, sizeof(b), "OPPONENT DROPPED  %ds", left); }
+		else { double left = g_oppDropUntil - Time(); if (left < 0) left = 0; snprintf(b, sizeof(b), "DISCONNECTED. AUTO-WIN IN: %.1f", left); }
 		DrawTextOutlined(ScreenWidth() / 2 - (int)strlen(b) * 8, ScreenHeight() / 2 - 100, b, FONT_BIG, Color(255, 200, 80, 255));
 	}
 	if (in_level()) {
