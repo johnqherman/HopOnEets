@@ -71,11 +71,15 @@ function fakeMod(port: number): Mod {
   mk(38692, "bob");
   mk(38693, "carol");
   mk(38694, "dave");
+  mk(38695, "erin");
+  mk(38696, "finn");
   await sleep(250);
   const A = fakeMod(38691),
     B = fakeMod(38692),
     C = fakeMod(38693),
-    D = fakeMod(38694);
+    D = fakeMod(38694),
+    E = fakeMod(38695),
+    F = fakeMod(38696);
   await sleep(120);
 
   // ---- 1) private host/join by code ----
@@ -246,7 +250,67 @@ function fakeMod(port: number): Mod {
   if (rr) ok("round restarts after reconnect: " + rr);
   D2.close();
 
-  [A, B, C].forEach((m) => m.close());
+  // ---- ranked Glicko-2 series: E beats F 2-0 -> rating moves off the 1500 base ----
+  E.send("hello erin");
+  F.send("hello finn");
+  E.send("queue");
+  F.send("queue");
+  await E.expect((l) => l.startsWith("match "), "E ranked match");
+  await F.expect((l) => l.startsWith("match "), "F ranked match");
+  for (let r = 1; r <= 2; r++) {
+    E.send("finish 100 1 5"); // E completes first -> wins the round
+    await E.expect((l) => l.startsWith("result "), "E round " + r);
+  }
+  const es = await E.expect((l) => l.startsWith("series "), "E series_over");
+  const fs2 = await F.expect((l) => l.startsWith("series "), "F series_over");
+  // series <winner> <yw> <ow> <ranked> <rOld> <rNew> <forfeit>
+  const ep = es ? es.split(" ") : [];
+  if (
+    es &&
+    ep[1] === "you" &&
+    ep[4] === "1" &&
+    +ep[5] === 1500 &&
+    +ep[6] > 1500 &&
+    ep[7] === "0"
+  )
+    ok(
+      "ranked win: Glicko 1500 -> " +
+        ep[6] +
+        " (up, ranked, not forfeit): " +
+        es,
+    );
+  else if (es) fail("E series wrong: " + es);
+  const fp = fs2 ? fs2.split(" ") : [];
+  if (fs2 && fp[1] === "opponent" && +fp[5] === 1500 && +fp[6] < 1500)
+    ok("ranked loss: Glicko 1500 -> " + fp[6] + " (down): " + fs2);
+  else if (fs2) fail("F series wrong: " + fs2);
+  // both freed -> re-queue; now test FORFEIT (server-authoritative, both get series)
+  E.send("queue");
+  F.send("queue");
+  await E.expect((l) => l.startsWith("match "), "E rematch");
+  await F.expect((l) => l.startsWith("match "), "F rematch");
+  F.send("forfeit");
+  // a forfeit series line ends with the forfeit flag 1 (the prior rating series ended 0)
+  const efWin = await E.expect(
+    (l) => l.startsWith("series ") && l.endsWith(" 1"),
+    "E wins on F forfeit",
+  );
+  const ffLoss = await F.expect(
+    (l) => l.startsWith("series ") && l.endsWith(" 1"),
+    "F sees own forfeit loss",
+  );
+  if (efWin && efWin.split(" ")[1] === "you" && efWin.split(" ")[7] === "1")
+    ok("forfeit -> opponent wins (forfeit flag): " + efWin);
+  else if (efWin) fail("forfeit winner wrong: " + efWin);
+  if (
+    ffLoss &&
+    ffLoss.split(" ")[1] === "opponent" &&
+    ffLoss.split(" ")[7] === "1"
+  )
+    ok("forfeiter gets server-authoritative DEFEAT + rating: " + ffLoss);
+  else if (ffLoss) fail("forfeiter series wrong: " + ffLoss);
+
+  [A, B, C, E, F].forEach((m) => m.close());
   bridges.forEach((b) => b.close());
   relay.close();
   await sleep(120);

@@ -22,7 +22,6 @@ interface Peer {
   noContest: boolean;
   ranked: boolean;
   roundTimer: ReturnType<typeof setTimeout> | null;
-  forfeited: boolean;
 }
 // match held open for reconnect, keyed by dropped player's uuid
 interface Held {
@@ -32,38 +31,102 @@ interface Held {
   ranked: boolean;
   timer: ReturnType<typeof setTimeout>;
 }
-// id = stable client UUID (Elo key; names are spoofable so must not key Elo); name = display only
+// id = stable client UUID (rating key; names are spoofable so must not key the rating); name = display only
 const BEST_OF = 3,
   WINS_NEEDED = 2;
 
-// ---- Elo ladder (ranked only); persisted JSON on relay host. K=32, default 1000 ----
-const ELO_FILE = process.env.ELO_FILE || "elo.json",
-  ELO_DEFAULT = 1000,
-  ELO_K = 32;
-let eloStore: Record<string, number> = {};
+// ---- Glicko-2 rating ladder (ranked only); persisted JSON on the relay host, keyed by uuid ----
+// per player: rating r (display, 1500 base), deviation rd (350), volatility vol (0.06). TAU bounds
+// volatility change. each ranked series = one rating period vs one opponent (lichess-style per-game).
+const RATING_FILE =
+  process.env.RATING_FILE || process.env.ELO_FILE || "ratings.json";
+const R0 = 1500,
+  RD0 = 350,
+  VOL0 = 0.06,
+  TAU = 0.5,
+  SCALE = 173.7178;
+interface Rating {
+  r: number;
+  rd: number;
+  vol: number;
+}
+const defRating = (): Rating => ({ r: R0, rd: RD0, vol: VOL0 });
+let ratings: Record<string, Rating> = {};
 try {
-  eloStore = JSON.parse(fs.readFileSync(ELO_FILE, "utf8"));
+  const raw = JSON.parse(fs.readFileSync(RATING_FILE, "utf8"));
+  for (const k in raw)
+    ratings[k] =
+      typeof raw[k] === "number" ? { r: raw[k], rd: RD0, vol: VOL0 } : raw[k]; // migrate legacy numeric (Elo-era) entries
 } catch {
   /* first run, empty */
 }
-const getElo = (id: string): number => eloStore[id] ?? ELO_DEFAULT;
-function saveElo(): void {
+const getRating = (id: string): Rating => ratings[id] ?? defRating();
+const displayR = (id: string): number => Math.round(getRating(id).r);
+function saveRatings(): void {
   try {
-    fs.writeFileSync(ELO_FILE, JSON.stringify(eloStore, null, 2));
+    fs.writeFileSync(RATING_FILE, JSON.stringify(ratings, null, 2));
   } catch (e) {
-    console.error("[relay] elo save failed:", e);
+    console.error("[relay] rating save failed:", e);
   }
 }
-function applyElo(winnerId: string, loserId: string) {
-  const wOld = getElo(winnerId),
-    lOld = getElo(loserId);
-  const expW = 1 / (1 + Math.pow(10, (lOld - wOld) / 400));
-  const wNew = Math.round(wOld + ELO_K * (1 - expW)),
-    lNew = Math.round(lOld - ELO_K * (1 - expW));
-  eloStore[winnerId] = wNew;
-  eloStore[loserId] = lNew;
-  saveElo();
-  return { wOld, wNew, lOld, lNew };
+// one Glicko-2 step for `p` after a game vs `opp` with score s (1 win / 0 loss); returns new state
+function glicko2(p: Rating, opp: Rating, s: number): Rating {
+  const mu = (p.r - R0) / SCALE,
+    phi = p.rd / SCALE;
+  const muJ = (opp.r - R0) / SCALE,
+    phiJ = opp.rd / SCALE;
+  const g = 1 / Math.sqrt(1 + (3 * phiJ * phiJ) / (Math.PI * Math.PI));
+  const e = 1 / (1 + Math.exp(-g * (mu - muJ)));
+  const v = 1 / (g * g * e * (1 - e));
+  const delta = v * g * (s - e);
+  // volatility: solve Glickman step 5 via the Illinois (regula-falsi) iteration, bounded by TAU
+  const a = Math.log(p.vol * p.vol);
+  const f = (x: number) =>
+    (Math.exp(x) * (delta * delta - phi * phi - v - Math.exp(x))) /
+      (2 * (phi * phi + v + Math.exp(x)) ** 2) -
+    (x - a) / (TAU * TAU);
+  let A = a,
+    B;
+  if (delta * delta > phi * phi + v)
+    B = Math.log(delta * delta - phi * phi - v);
+  else {
+    let k = 1;
+    while (f(a - k * TAU) < 0) k++;
+    B = a - k * TAU;
+  }
+  let fA = f(A),
+    fB = f(B);
+  for (let i = 0; i < 100 && Math.abs(B - A) > 1e-6; i++) {
+    const C: number = A + ((A - B) * fA) / (fB - fA);
+    const fC = f(C);
+    if (fC * fB <= 0) {
+      A = B;
+      fA = fB;
+    } else fA = fA / 2;
+    B = C;
+    fB = fC;
+  }
+  const vol = Math.exp(A / 2);
+  const phiStar = Math.sqrt(phi * phi + vol * vol);
+  const phiNew = 1 / Math.sqrt(1 / (phiStar * phiStar) + 1 / v);
+  const muNew = mu + phiNew * phiNew * g * (s - e);
+  return { r: muNew * SCALE + R0, rd: phiNew * SCALE, vol };
+}
+// apply a ranked series result + persist; returns both players' display ratings old->new (rounded)
+function applyRating(winnerId: string, loserId: string) {
+  const wOld = getRating(winnerId),
+    lOld = getRating(loserId);
+  const wNew = glicko2(wOld, lOld, 1),
+    lNew = glicko2(lOld, wOld, 0);
+  ratings[winnerId] = wNew;
+  ratings[loserId] = lNew;
+  saveRatings();
+  return {
+    wOld: Math.round(wOld.r),
+    wNew: Math.round(wNew.r),
+    lOld: Math.round(lOld.r),
+    lNew: Math.round(lNew.r),
+  };
 }
 export type Verdict = { winner: "you" | "opponent" | "tie"; reason: string };
 
@@ -154,8 +217,8 @@ export function startRelay(
     const cfg = (
       selfName: string,
       oppName: string,
-      selfElo: number,
-      oppElo: number,
+      selfR: number,
+      oppR: number,
     ) => ({
       type: "match_config",
       match_id: match,
@@ -167,12 +230,12 @@ export function startRelay(
       tick_rate: 60,
       self: selfName,
       opponent: oppName,
-      self_elo: selfElo,
-      opp_elo: oppElo,
+      self_r: selfR,
+      opp_r: oppR,
     });
-    const eA = ranked ? getElo(A.id) : 0,
-      eB = ranked ? getElo(B.id) : 0;
-    a.send(cfg(A.name, B.name, eA, eB)); // display names + Elo; uuid stays server-side
+    const eA = ranked ? displayR(A.id) : 0,
+      eB = ranked ? displayR(B.id) : 0;
+    a.send(cfg(A.name, B.name, eA, eB)); // display names + rating; uuid stays server-side
     b.send(cfg(B.name, A.name, eB, eA));
     // countdown sent once both report `ready`; see ready handler
     log(
@@ -317,11 +380,11 @@ export function startRelay(
       let pE = { old: 0, neu: 0 },
         qE = { old: 0, neu: 0 };
       if (p.ranked) {
-        const r = pWon ? applyElo(p.id, q.id) : applyElo(q.id, p.id);
+        const r = pWon ? applyRating(p.id, q.id) : applyRating(q.id, p.id);
         pE = pWon ? { old: r.wOld, neu: r.wNew } : { old: r.lOld, neu: r.lNew };
         qE = pWon ? { old: r.lOld, neu: r.lNew } : { old: r.wOld, neu: r.wNew };
         log(
-          `elo ${p.match}: ${p.name} ${pE.old}->${pE.neu}, ${q.name} ${qE.old}->${qE.neu}`,
+          `rating ${p.match}: ${p.name} ${pE.old}->${pE.neu}, ${q.name} ${qE.old}->${qE.neu}`,
         );
       }
       conn.send({
@@ -330,8 +393,8 @@ export function startRelay(
         you_wins: p.wins,
         opp_wins: q.wins,
         ranked: p.ranked,
-        elo_old: pE.old,
-        elo_new: pE.neu,
+        r_old: pE.old,
+        r_new: pE.neu,
       });
       p.opp.send({
         type: "series_over",
@@ -339,8 +402,8 @@ export function startRelay(
         you_wins: q.wins,
         opp_wins: p.wins,
         ranked: p.ranked,
-        elo_old: qE.old,
-        elo_new: qE.neu,
+        r_old: qE.old,
+        r_new: qE.neu,
       });
       log(
         `series over ${p.match}: ${pWon ? p.name : q.name} (best of ${BEST_OF})`,
@@ -376,7 +439,6 @@ export function startRelay(
       noContest: false,
       ranked: false,
       roundTimer: null,
-      forfeited: false,
     });
     const dispatch = (m: any) => {
       const p = peers.get(conn);
@@ -414,7 +476,7 @@ export function startRelay(
             );
             startRound(conn, h.oppConn, p.wins + q.wins + 1); // restart current round for both
           } else {
-            conn.send({ type: "elo", value: getElo(p.id) });
+            conn.send({ type: "rating", value: displayR(p.id) });
           }
           break;
         }
@@ -498,9 +560,49 @@ export function startRelay(
           log(`no contest ${p.match}: desync @${m.tick | 0}`);
           break;
         }
-        case "forfeit": // intentional leave: disconnect awards opponent immediately (no reconnect hold)
-          p.forfeited = true;
+        case "forfeit": {
+          // intentional leave: resolve the series now (opponent wins), no reconnect hold; the
+          // forfeiter stays connected to see its DEFEAT screen with the real new rating
+          const fq = p.opp ? peers.get(p.opp) : undefined;
+          if (!p.opp || !p.match || !fq) break;
+          clearRoundTimer(p);
+          clearRoundTimer(fq);
+          let pE = { old: 0, neu: 0 },
+            qE = { old: 0, neu: 0 };
+          if (p.ranked) {
+            const r = applyRating(fq.id, p.id);
+            qE = { old: r.wOld, neu: r.wNew };
+            pE = { old: r.lOld, neu: r.lNew };
+          }
+          conn.send({
+            type: "series_over",
+            winner: "opponent",
+            you_wins: p.wins,
+            opp_wins: fq.wins,
+            ranked: p.ranked,
+            r_old: pE.old,
+            r_new: pE.neu,
+            forfeit: true,
+          });
+          p.opp.send({
+            type: "series_over",
+            winner: "you",
+            you_wins: fq.wins,
+            opp_wins: p.wins,
+            ranked: fq.ranked,
+            r_old: qE.old,
+            r_new: qE.neu,
+            forfeit: true,
+          });
+          log(`forfeit ${p.match}: ${p.name} forfeited to ${fq.name}`);
+          p.wins = 0;
+          fq.wins = 0;
+          p.match = null;
+          p.opp = null;
+          fq.match = null;
+          fq.opp = null;
           break;
+        }
         case "finish":
           p.finish = {
             completed: !!m.completed,
@@ -548,8 +650,8 @@ export function startRelay(
       queue = queue.filter((c) => c !== conn);
       if (p.hostCode) rooms.delete(p.hostCode);
       const q = p.opp ? peers.get(p.opp) : undefined;
-      if (p.opp && p.match && q && !p.forfeited) {
-        // unexpected drop: hold match open for reconnect
+      if (p.opp && p.match && q) {
+        // unexpected drop (not a forfeit - those resolve in dispatch): hold match for reconnect
         clearRoundTimer(q);
         q.opp = null;
         q.finish = null;
@@ -568,10 +670,10 @@ export function startRelay(
             // window expired, no reconnect -> award opponent
             let qE = { old: 0, neu: 0 };
             if (qq.ranked) {
-              const r = applyElo(qq.id, leaverId);
+              const r = applyRating(qq.id, leaverId);
               qE = { old: r.wOld, neu: r.wNew };
               log(
-                `elo dropout ${match}: ${qq.name} ${qE.old}->${qE.neu}, ${leaverName} ${r.lOld}->${r.lNew}`,
+                `rating dropout ${match}: ${qq.name} ${qE.old}->${qE.neu}, ${leaverName} ${r.lOld}->${r.lNew}`,
               );
             }
             oppConn.send({
@@ -580,8 +682,8 @@ export function startRelay(
               you_wins: oppWins,
               opp_wins: dropWins,
               ranked: qq.ranked,
-              elo_old: qE.old,
-              elo_new: qE.neu,
+              r_old: qE.old,
+              r_new: qE.neu,
               forfeit: true,
             });
             qq.opp = null;
@@ -603,30 +705,9 @@ export function startRelay(
         return;
       }
       if (p.opp && q) {
-        // forfeit or non-match disconnect: resolve/cleanup now
+        // opp set but not a held mid-match drop (transient): notify + free
         clearRoundTimer(q);
         p.opp.send({ type: "opponent_left" });
-        if (p.match) {
-          // forfeit = series loss for leaver (Elo still applies on ranked)
-          let qE = { old: 0, neu: 0 };
-          if (q.ranked) {
-            const r = applyElo(q.id, p.id);
-            qE = { old: r.wOld, neu: r.wNew };
-            log(
-              `elo forfeit ${p.match}: ${q.name} ${qE.old}->${qE.neu}, ${p.name} ${r.lOld}->${r.lNew}`,
-            );
-          }
-          p.opp.send({
-            type: "series_over",
-            winner: "you",
-            you_wins: q.wins,
-            opp_wins: p.wins,
-            ranked: q.ranked,
-            elo_old: qE.old,
-            elo_new: qE.neu,
-            forfeit: true,
-          });
-        }
         q.opp = null;
         q.match = null;
         q.wins = 0;

@@ -19,8 +19,8 @@ static void draw_menu() {
     }
   } else {
     char nm[64];
-    if (g_myElo > 0)
-      snprintf(nm, sizeof(nm), "User: %s (%d)", g_playerId.c_str(), g_myElo);
+    if (g_myRating > 0)
+      snprintf(nm, sizeof(nm), "User: %s (%d)", g_playerId.c_str(), g_myRating);
     else
       snprintf(nm, sizeof(nm), "User: %s", g_playerId.c_str());
     UI::Label(nm);

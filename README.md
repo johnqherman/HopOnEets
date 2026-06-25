@@ -14,7 +14,7 @@ timestep), reverse-engineered from the game binary.
 - **v0.2 realtime online** — see the opponent **live** as a ghost Eets over a WebSocket relay;
   host/join by code or ranked matchmaking; build timer with forced sim start; opponent's locked-in
   build shown as ghost items.
-- **v0.3 ranked** — client-UUID Elo ladder + win screen, per-round level pool, reconnect window, forfeit.
+- **v0.3 ranked** — client-UUID Glicko-2 rating ladder + win screen, per-round level pool, reconnect window, forfeit.
 
 Builds clean for Linux (`.so`) and Windows (`.dll`); packs to one `.eetsmod`.
 
@@ -34,7 +34,7 @@ Builds clean for Linux (`.so`) and Windows (`.dll`); packs to one `.eetsmod`.
 
 ```
 mod (this repo, native)  <-- WebSocket/TLS, text line protocol -->  relay (netproto/, Node)
-   hand-rolled WS+TLS client (src/ws_client.h)                       pairs players, relays live frames, Elo + scoring
+   hand-rolled WS+TLS client (src/ws_client.h)                       pairs players, relays live frames, Glicko-2 rating + scoring
 ```
 
 The mod connects directly to the relay over `wss://` (WS framing + TLS hand-rolled in

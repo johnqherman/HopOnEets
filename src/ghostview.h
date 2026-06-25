@@ -81,8 +81,8 @@ static void draw_ghost(float dt) {
   char lbuf[48];
   const char *nm = g_oppId.empty() ? "OPPONENT" : g_oppId.c_str();
   const char *label = nm;
-  if (g_ranked && g_oppElo > 0) {
-    snprintf(lbuf, sizeof(lbuf), "%s (%d)", nm, g_oppElo);
+  if (g_ranked && g_oppRating > 0) {
+    snprintf(lbuf, sizeof(lbuf), "%s (%d)", nm, g_oppRating);
     label = lbuf;
   }
   DrawTextOutlined(sx - (int)strlen(label) * 4, sy - 48, label, FONT_SMALL,
