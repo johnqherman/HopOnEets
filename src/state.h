@@ -125,21 +125,8 @@ static long g_desyncTick = -1;
 static bool g_desyncSent = false;              // reported to the relay once per round
 static bool g_noContest  = false;              // relay flagged this match no-contest (score withheld)
 
-// ---- headless re-sim / batch verifier (v0.3; spec Part 6) ----
-// In `resim_file` mode the mod loads an input log, drives load -> apply-build -> force-start ->
-// read-outcome unattended, and writes a verdict. The authoritative cross-platform result.
-enum ResimState { RS_OFF, RS_INIT, RS_LOADING, RS_RUNNING, RS_DONE };
-static ResimState g_resimState = RS_OFF;
-static std::string g_resimFile;                // input-log JSON to re-simulate ("" = normal interactive mode)
-static int  g_resimLevel = -1;                 // level index to load (from cfg or the log)
-static long g_resimMaxTicks = 60 * 120;        // DNF guard: 120s at 60Hz
-static long g_simMaxTicks   = 60 * 120;        // live-match DNF watchdog: 120s @60Hz (sim that never ends -> failed round)
-static bool g_resimClaimDone = false; static long g_resimClaimTick = -1;   // the submitter's finish claim
-static bool g_resimExit = true;                // exit the process when the verdict is written (batch mode)
-static bool g_resimReproduced = false;         // last verdict: did the re-sim reproduce the claim
-struct ResimItem { std::string name; float x, y; };
-static std::vector<ResimItem> g_resimBuild;    // build placements parsed from the log
-struct GBuild { std::string bp; float x, y; };                   // opponent's locked-in build item
+static long g_simMaxTicks = 60 * 120;          // live-match DNF watchdog: 120s @60Hz (sim that never ends -> failed round)
+struct GBuild { std::string bp; float x, y; };                   // opponent's locked-in build item (drawn as a ghost)
 static std::vector<GBuild> g_oppBuild; static bool g_oppBuildReady = false;
 
 // ---- forced build timer ----

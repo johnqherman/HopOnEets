@@ -1,6 +1,6 @@
 // match.h - the competitive match lifecycle: round resolution, the engine-event handlers, and the per-frame
 // build/sim/retry/round-cap state machine. Pure logic - NO drawing (the HUD lives in hud.h). Pulls in the
-// lower layers (recorder/net/resim/determinism) so it must be #included after them.
+// lower layers (recorder/net/determinism) so it must be #included after them.
 #pragma once
 #include "state.h"
 
@@ -19,7 +19,6 @@ static void report_finish(bool completed) {
 	} else {           // solo practice: just note the time (no recording, no ghost)
 		snprintf(g_roundMsg, sizeof(g_roundMsg), "round: %.2fs", g_finishTick / (double)TICK_RATE);
 	}
-	if (g_resimState == RS_RUNNING) resim_on_complete();
 	g_roundCounter++;
 	if (g_matched) {
 		g_interRound = true;              // suppress overlay draws until the next round's level loads (avoids the
@@ -36,7 +35,6 @@ static void report_finish(bool completed) {
 static void match_on_event(const char* name, void* a, void* b) {
 	if (strcmp(name, "level_load") == 0) {
 		begin_build();
-		if (g_resimState == RS_LOADING) resim_on_level_loaded();   // re-sim: apply build + start unattended
 	} else if (strcmp(name, "level_reset") == 0) {
 		bool wasSim = (g_phase == SIM);
 		g_resets++; g_phase = BUILD;
@@ -164,11 +162,11 @@ static void match_update() {
 				}
 				if (g_tick / HASH_INTERVAL > g_lastHashBucket) {   // one sample per interval bucket (jump-proof; == g_tick%==0 when ticks step by 1)
 					g_lastHashBucket = g_tick / HASH_INTERVAL;
-					g_samples.push_back({ g_tick, ep.x, ep.y, state_hash() });   // recorded for the replay / authoritative re-sim
+					g_samples.push_back({ g_tick, ep.x, ep.y, state_hash() });   // for the determinism self-test + same-platform desync hashes
 					// NO live cross-player hash compare: this is a solution RACE, so the two players build
 					// different contraptions and their state hashes legitimately differ every tick. Comparing
-					// them flagged a false "desync" -> no_contest. Determinism is validated server-side by the
-					// authoritative re-sim of each player's own input log, not by comparing players live.
+					// them flagged a false "desync" -> no_contest. Same-platform desync detection (Part 10) is
+					// the only cross-client hash check; the relay scores the series from reported finishes.
 				}
 			}
 		}

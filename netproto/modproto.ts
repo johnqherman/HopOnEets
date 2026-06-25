@@ -19,7 +19,6 @@ export function modLineToMsg(line: string, fallbackName = 'anon'): any | null {
     case 'pos':      return { type: 'pos', tick: +a[1], x: +a[2], y: +a[3], emo: a[4] || 'h', mot: a[5] || 'w', flip: a[6] ? +a[6] : 0 };
     case 'hash':     return { type: 'hash', tick: +a[1], hash: a[2], platform: a[3] };
     case 'desync':   return { type: 'desync', tick: +a[1] };
-    case 'replay':   return { type: 'submit_replay', round: +a[1], platform: a[2], log: a[3] };
     case 'finish':   return { type: 'finish', finish_tick: +a[1], completed: a[2] === '1', items_used: +a[3], deaths: a[4] ? +a[4] : 0 };
     case 'forfeit':  return { type: 'forfeit' };
     default:         return null;
@@ -40,7 +39,6 @@ export function msgToModLine(m: any): string | null {
     case 'opp_finish':    return `oppfin ${m.finish_tick} ${m.completed ? 1 : 0} ${m.items_used}`;
     case 'opp_hash':      return `oh ${m.tick} ${m.hash} ${m.platform}`;
     case 'no_contest':    return `nocontest ${m.reason} ${m.tick ?? -1}`;
-    case 'authoritative': return `auth ${m.kind} ${m.winner || '-'} ${m.reason}`;
     case 'result':        return `result ${m.winner} ${m.reason} ${m.you_wins} ${m.opp_wins}`;
     case 'elo':           return `elo ${m.value ?? 0}`;
     case 'series_over':   return `series ${m.winner} ${m.you_wins} ${m.opp_wins} ${m.ranked ? 1 : 0} ${m.elo_old ?? 0} ${m.elo_new ?? 0} ${m.forfeit ? 1 : 0}`;

@@ -43,18 +43,12 @@ function fakeMod(port: number): Mod {
 }
 
 (async () => {
-  // fake authoritative verifier: records calls, returns a canned decided result (transport test only)
-  const verifyCalls: { mid: string; round: number; aLog: string; bLog: string }[] = [];
-  const fakeVerify = async (mid: string, round: number, a: { player: string; log: string }, b: { player: string; log: string }) => {
-    verifyCalls.push({ mid, round, aLog: a.log, bLog: b.log });
-    return { kind: 'decided' as const, winner: a.player, reason: 'finish_tick', detail: {} };
-  };
-  const relay = startRelay(RELAY, () => {}, { verify: fakeVerify });
+  const relay = startRelay(RELAY, () => {});
   const bridges: { close(): void }[] = [];
   const mk = (port: number, player: string) => bridges.push(startBridge({ relayPort: RELAY, modPort: port, player }));
-  mk(38691, 'alice'); mk(38692, 'bob'); mk(38693, 'carol'); mk(38694, 'dave'); mk(38695, 'erin'); mk(38696, 'finn');
+  mk(38691, 'alice'); mk(38692, 'bob'); mk(38693, 'carol'); mk(38694, 'dave');
   await sleep(250);
-  const A = fakeMod(38691), B = fakeMod(38692), C = fakeMod(38693), D = fakeMod(38694), E = fakeMod(38695), F = fakeMod(38696);
+  const A = fakeMod(38691), B = fakeMod(38692), C = fakeMod(38693), D = fakeMod(38694);
   await sleep(120);
 
   // ---- 1) private host/join by code ----
@@ -158,20 +152,7 @@ function fakeMod(port: number): Mod {
   if (rr) ok('round restarts after reconnect: ' + rr);
   D2.close();
 
-  // ---- ranked: authoritative re-sim handoff (relay -> verifier) ----
-  E.send('hello erin'); F.send('hello finn');
-  E.send('queue'); F.send('queue');
-  await E.expect((l) => l.startsWith('match '), 'E ranked match');
-  await F.expect((l) => l.startsWith('match '), 'F ranked match');
-  E.send('replay 1 linux64 eyJhIjoxfQ=='); F.send('replay 1 win32 eyJiIjoyfQ==');   // base64 input logs (no spaces)
-  E.send('finish 100 1 5'); F.send('finish 120 1 6');
-  const auth = await E.expect((l) => l.startsWith('auth '), 'E authoritative result', 2500);
-  if (auth && auth.startsWith('auth decided ')) ok('ranked authoritative handoff: ' + auth);
-  else if (auth) fail('authoritative wrong: ' + auth);
-  if (verifyCalls.length > 0 && verifyCalls[0].aLog && verifyCalls[0].bLog) ok('verifier received both submitted logs');
-  else fail('verifier not called with both logs');
-
-  [A, B, C, E, F].forEach((m) => m.close());
+  [A, B, C].forEach((m) => m.close());
   bridges.forEach((b) => b.close());
   relay.close();
   await sleep(120);

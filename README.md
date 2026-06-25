@@ -11,24 +11,24 @@ timestep), reverse-engineered from the game binary. The full design is in
 
 ## Status
 
-- **v0.1 foundation** — replay recorder, determinism harness, ghost race, local mirror scoring.
-- **v0.2 realtime online (prototype)** — see the opponent **live** as a ghost Eets over a
-  WebSocket relay; host/join by code or ranked matchmaking; 15s build timer with forced sim start;
-  opponent's locked-in build shown as ghost items.
+- **v0.1 foundation** — determinism harness, build capture, live ghost view, round scoring.
+- **v0.2 realtime online** — see the opponent **live** as a ghost Eets over a WebSocket relay;
+  host/join by code or ranked matchmaking; build timer with forced sim start; opponent's locked-in
+  build shown as ghost items.
+- **v0.3 ranked** — client-UUID Elo ladder + win screen, per-round level pool, reconnect window, forfeit.
 
-Builds clean for Linux (`.so`) and Windows (`.dll`); packs to one `.eetsmod`. Online is Linux-first
-(the native socket client is POSIX; Windows online is a follow-up winsock build).
+Builds clean for Linux (`.so`) and Windows (`.dll`); packs to one `.eetsmod`.
 
 ## Features
 
 | | |
 |---|---|
-| **Recorder (M1)** | build-phase placement set + finish → replay JSON |
+| **Build capture (M1)** | build-phase placements captured + reconciled to the live build at sim start |
 | **Determinism (M2)** | pin FPS / seed / det-mode, lock vanilla game speed, state-hash seq, reset-rerun MATCH/DIVERGE |
-| **Ghost race (M3)** | record/load an Eets timeline; draw the opponent in-level as a translucent ghost Eets |
-| **Mirror scoring (M4)** | score the round by the spec tiebreakers; best-of tally; ranked-ready result JSON |
+| **Live ghost (M3)** | draw the live opponent in-level as a translucent ghost Eets + their build items |
+| **Scoring (M4)** | score the round by the spec tiebreakers; best-of tally; relay-authoritative |
 | **Realtime online (v0.2)** | live opponent position + build over WebSocket; host/join by code; ranked queue |
-| **Build timer** | fixed build seconds (default 15), then the sim is force-started for both players |
+| **Build timer** | fixed build seconds, then the sim is force-started for both players |
 | **Custom menu** | one `Eets::UI` menu (**F6**) holds all settings + match controls; changes persist via `SaveSet` |
 
 ## Architecture
@@ -60,18 +60,14 @@ The mod is one translation unit: `hop_on_eets.cpp` (thin entry layer) `#include`
 2. **Bridge** (each player, local): `RELAY_HOST=<relay-ip> PLAYER=<name> npm run bridge`
    (listens for the mod on `127.0.0.1:38600`).
 3. **Mod**: `make pack`, drop `hop_on_eets.eetsmod` in `<game>/mods`, launch Eets, open the **MODS**
-   button. In the **F6** menu: turn **Online** on, then **Host game** (shares a code) / **Join by
-   code** / **Ranked queue**. Both build for 15s, the sim auto-starts, and you see the opponent live.
-
-Offline, it still records and you can race a **ghost file** (`Race last recording` in the menu).
+   button. In the **F6** menu: **Host game** (shares a code) / **Join by code** / **Ranked queue**.
+   Both players build, the sim auto-starts, and you see the opponent live.
 
 ### Controls
 
-- `F6` — open/close the menu (settings, ghost, host/join/queue, score). All config lives here.
+- `F6` — open/close the menu (host/join/queue, online name, score, leave & forfeit).
 - `CTRL+SHIFT+H` — toggle match mode (engages determinism). `CTRL+SHIFT+R` — new match.
-- Join code is typed in the menu (text entry); settings persist across restarts.
-
-Outputs land in `<game>/Log/`: `hop_on_eets_replay_*.json`, `*_ghost_*.txt`, `*_result_*.json`.
+- Join code is typed in the menu (text entry); your online name + UUID persist across restarts.
 
 ## netproto (TypeScript)
 

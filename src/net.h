@@ -24,11 +24,6 @@ static void net_handle(const std::string& ln) {
 		g_noContest = true; long nt = -1; char rs[24] = { 0 }; sscanf(ln.c_str(), "nocontest %23s %ld", rs, &nt);
 		snprintf(g_roundMsg, sizeof(g_roundMsg), "NO CONTEST (%s) @t%ld - not ranked", rs[0] ? rs : "desync", nt);
 	}
-	else if (strncmp(ln.c_str(), "auth ", 5) == 0) {   // authoritative (re-sim) result; overrides the provisional
-		char k[16] = { 0 }, w[40] = { 0 }, r[24] = { 0 }; sscanf(ln.c_str() + 5, "%15s %39s %23s", k, w, r);
-		const char* outcome = (strcmp(k, "no_contest") == 0) ? "NO CONTEST" : (g_playerId == w ? "WIN" : "LOSS");
-		snprintf(g_roundMsg, sizeof(g_roundMsg), "OFFICIAL %s: %s (%s)", k, outcome, r);
-	}
 	else if (sscanf(ln.c_str(), "ob %39s %f %f", a, &x, &y) == 3) { if (valid_pos(x, y)) { if (g_oppBuildReady) { g_oppBuild.clear(); g_oppBuildReady = false; } g_oppBuild.push_back({ a, x, y }); } }
 	else if (strncmp(ln.c_str(), "obend", 5) == 0) g_oppBuildReady = true;
 	else if (sscanf(ln.c_str(), "match %39s %39s %d %d %u %d %d", a, b, &rk, &lv, &sd, &g_myElo, &g_oppElo) >= 2) {

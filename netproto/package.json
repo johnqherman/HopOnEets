@@ -6,9 +6,8 @@
   "scripts": {
     "relay": "tsx relay.ts",
     "bridge": "tsx bridge.ts",
-    "test": "ELO_FILE=/dev/null tsx e2e.ts && tsx verifier.test.ts",
+    "test": "ELO_FILE=/dev/null tsx e2e.ts",
     "test:e2e": "tsx e2e.ts",
-    "test:verify": "tsx verifier.test.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc"
   },

@@ -16,16 +16,14 @@ two level instances per process, readable finish state, headless replay validati
 random seeds. Each is resolved below (Part 0).
 
 Design decisions:
-1. **v0.1 = feasible foundation** — local replay + determinism harness + ghost race (buildable on
-   the framework as-is). Online mirror and ranked move to v0.2/v0.3 with an explicit hook-build
-   roadmap.
+1. **v0.1 = feasible foundation** — determinism harness + a live head-to-head race (buildable on
+   the framework as-is). Online mirror and ranked follow with an explicit hook-build roadmap.
 2. **Solution-race model** — Eets is *build-then-simulate*; reuse the engine's own determinism
-   (same puzzle + pinned seed → reproducible run); rank by completion + solution time. The "input
-   log" is a **placement set + sparse in-sim activations**, not a dense per-tick stream.
-3. **Cross-platform ranked from v1** — because FP physics is *not* bit-identical across OS/build,
-   ranked truth cannot be lockstep hash-equality. The portable unit of truth is the **input
-   log**, and the authoritative result comes from **re-simulating it on a single canonical build**
-   (server-side / reference runtime).
+   (same puzzle + pinned seed → reproducible run); rank by completion + solution time.
+3. **Live head-to-head** — both players race the same puzzle; each streams its position + build to
+   the other (drawn as a ghost). The relay is authoritative for the series score, deciding rounds
+   from the players' reported finishes. Cross-platform integrity = same-platform desync detection
+   (FP physics isn't bit-identical across OS, so cross-platform hashes are never compared).
 
 ---
 
@@ -48,7 +46,7 @@ Ghidra addr = `0x400000 + RVA`). Build identity from an in-binary assert path
 | 3 | Force fixed timestep? | **Already fixed.** | `World_SetFPS(int)` (`FUN_004f7c80`) writes the sim timestep `*(double*)([sim+0x34]+0x90) = DAT_005625e8 / fps`. The sim integrates at `dt = k/FPS`, decoupled from render rate. |
 | 4 | Levels editable without repacking archives? | **Yes.** | `Simulator::LoadWinCondition` (`FUN_005378c0`) builds `LEVELS:Game/<name>` and loads `DATA:Levels/Utility/GoalUtils.lua`. `LEVELS:`/`DATA:` are virtual-FS prefixes; the framework overlays loose files (`assets/` mirrors `Data/`, copied before the engine scans). Goal logic is **Lua**. |
 | 5 | Finish state readable? | **Yes.** | `LevelManager::CompleteLevel` (`FUN_004c98f0`): FNV-1a(name) → hub/level map, sets per-level *completed* flag `+0x48`, drives unlock thresholds. Already detoured to fire `level_complete(LevelManager*, Player*)`. `World_ShowSolutionTime(float)` and `World_IncrementStat(name)` expose timing/stats. |
-| 6 | Headless replay validation? | **Hard (but designable).** | The sim is reached only through the running game (mod `Update` fires on `FNA3D_SwapBuffers`; renderer is a singleton bound to an FNA3D device). Headless = stub FNA3D/SDL with null backends, or a dedicated automated client. **Critical enabler for cross-platform ranked** (Part 6). |
+| 6 | Headless sim (no window)? | **Hard.** | The sim is reached only through the running game (mod `Update` fires on `FNA3D_SwapBuffers`; renderer is a singleton bound to an FNA3D device). Headless needs Xvfb (a real GL context, no monitor). Not on the live path — ranked scores from reported finishes (Part 6). |
 | 7 | Internal random seeds? | **Yes — and pinnable.** | `World_GetDeterministicIntRange` → `FUN_004bab10`: if det-mode flag `DAT_00ee3bf0 == 0` it uses libc `rand()`; otherwise a **Park-Miller minimal-standard PRNG via Schrage's method** over integer state `DAT_005a1790` (params `0x5a1794`/`0x5a1798`/`0x5a179c`/`0x5a17a0`). The mod can write both the det-mode flag and the seed. |
 
 ### The determinism core
@@ -65,7 +63,7 @@ return lo + (int)( (double)norm(seed) / (double)m * range );
 Integer state update ⇒ **bit-reproducible across machines**. With the fixed `dt=1/FPS` and
 `Simulator::ResetSimulation` (`FUN_00536090`, which restores objects to their initial snapshot),
 the engine is **deterministic by construction given {level, seed, FPS, inputs}** — on the same
-build. This is the substrate the mirror race / replay system reuses.
+build. This is the substrate the live head-to-head race reuses.
 
 ### Framework reality (from `loader/loader.cpp`, `API.md`, headers, examples)
 
@@ -113,8 +111,8 @@ build. This is the substrate the mirror race / replay system reuses.
 
 Competitive **solution racing**: two players receive the **same puzzle, same pinned seed, same
 allowed inventory, same ruleset**, build a solution during a build phase, and run the
-deterministic simulation; the winner is decided by completion + solution time. v0.1 ships the
-local foundation (record / replay / ghost race); online mirror and ranked follow.
+deterministic simulation; the winner is decided by completion + solution time. Each player sees the
+other **live** (streamed position + build, drawn as a ghost); the relay scores the series.
 
 Mod id `hop_on_eets`; built as a `.eetsmod`; framework `eetsmod >= 0.18.0`; manifest declares
 `sim = 1`.
@@ -128,17 +126,17 @@ Eets.exe / Eets (native)            eetsmod framework (0.18.0)
                         |
                   Hop On Eets mod (.eetsmod, sim=1)
    +--------------+--------------+-------------------+-----------------+
-   | Determinism  | Sim-tick     | Input Recorder    | Replay Player   |
-   | Controller   | Source       | (placement set +  | (ghost / local  |
-   | (seed + FPS  | (step hook / | activations)      | playback)       |
-   |  + det-mode  | sim counter) |                   |                 |
+   | Determinism  | Sim-tick     | Build Recorder    | Live Ghost View |
+   | Controller   | Source       | (placement set,   | (opponent pos + |
+   | (seed + FPS  | (step hook / |  shared live to   |  build, drawn   |
+   |  + det-mode  | sim counter) |  the opponent)    |  from the net)  |
    |  + speedlock)|              |                   |                 |
    +--------------+--------------+-------------------+-----------------+
    | State Hasher | Level Loader | Result Reporter   | Net Client      |
-   | (snapshot)   | + inventory  | (finish + time)   | (v0.2+)         |
+   | (snapshot)   | + inventory  | (finish + time)   | (WS/TLS)        |
    +--------------+--------------+-------------------+-----------------+
                         |
-                  Ranked server (v0.3): relay + replay store + AUTHORITATIVE re-sim
+                  Ranked server: relay (pairing + live frames + Elo + series scoring)
 ```
 
 ## Part 3 — Gameplay model: Solution Race
@@ -152,7 +150,7 @@ Eets gameplay has two phases (confirmed by `World_IsSimulating` / `World_IsInLev
 
 A match is one or more **rounds**; a round = (shared puzzle + seed) → both players build → both
 sims run → compare. Players never share a board (singleton world) — each runs an isolated copy;
-the opponent appears as a **ghost** reconstructed from their recorded run.
+the opponent appears as a **live ghost** streamed from their client (position + anim + build).
 
 **Win conditions:** first to complete. Tiebreakers: completion status → finish tick (solution
 time) → puzzle pieces collected → fewer items used → fewer resets. All readable from
@@ -161,24 +159,14 @@ time) → puzzle pieces collected → fewer items used → fewer resets. All rea
 ## Part 4 — Tick & input model
 
 - **Tick** = the engine's fixed sim step. Pin the rate with `World_SetFPS(TICK_RATE)` at sim start
-  so all clients and the re-sim agree. `TICK_RATE = 60` pending confirmation of the native rate
-  (M2); whatever it is, **pin it explicitly**. Render rate is irrelevant to outcome.
+  so both clients agree. `TICK_RATE = 60` pending confirmation of the native rate (M2); whatever it
+  is, **pin it explicitly**. Render rate is irrelevant to outcome.
 - **tick 0** = first sim step after the build phase ends (post-`level_reset`, "Go" pressed).
-- **Input log = mostly build-phase data**, not a dense stream:
-  ```json
-  {
-    "build": [
-      {"op":"place","item_id":"marshmallow","x":324,"y":188,"rot":90,"layer":"fg"},
-      {"op":"remove","ref":7}
-    ],
-    "sim": [ {"tick":842,"op":"activate","ref":3} ],
-    "seed": 123456789,
-    "tick_rate": 60
-  }
-  ```
-  `build` ops are captured from `object_spawn`/removal while `!IsSimulating()`; `sim` ops are the
-  sparse in-sim activations. Forward-compatible with a per-tick model (a placed item is just an op
-  at the build-phase tick).
+- **Build capture** — placements are recorded from `object_spawn`/removal while `!IsSimulating()`
+  (reconciled to the live objects at sim start, so a build reset keeps only the final contraption).
+  At sim start the locked-in build is streamed to the opponent (`build … buildend`) to draw as ghost
+  items. Mid-sim player activations (launchers etc.) are not recorded — they're played live, not
+  logged.
 
 ## Part 5 — Determinism model (the core enabler)
 
@@ -211,35 +199,25 @@ boards. Therefore, in any head-to-head match (mirror / solution race / ranked):
   the bound action). Also pin any related vanilla pacing setting (`World_SetMaximumSpeed`, Win
   `0xdc770`) to its canonical value.
 - Speed/pause tampering is an **integrity violation** → the round is no-contest (Part 9).
-- The locked set is declared in the ruleset (`locked_settings`) so it is auditable and matches
-  what the authoritative re-sim assumes.
+- The locked set is declared in the ruleset (`locked_settings`) so it is auditable.
 
 ### Cross-platform caveat (drives the ranked design)
 
 The PRNG and timestep are portable, but float physics is **not** bit-identical across
 Win32/Linux64. Therefore:
 - `get_state_hash` snapshots are **only comparable between clients on the same build/OS** — use
-  them for *same-platform* desync detection, never as cross-platform truth.
-- The **portable unit of truth is the input log + seed**. The authoritative outcome is produced by
-  **re-simulating that log on one canonical build** (Part 6). Clients' local sims are
-  visual/advisory.
+  them for *same-platform* desync detection (Part 10), never as cross-platform truth.
+- Ranked results come from the players' **reported finishes**, scored by the relay (Part 6), not
+  from comparing physics across platforms.
 
-## Part 6 — Cross-platform ranked validation
+## Part 6 — Ranked validation
 
-Because clients may be on different OSes, ranked results are **not** decided by comparing client
-state hashes. Instead:
-
-1. Each client submits its **input log + seed + finish claim + per-platform checkpoint hashes**.
-2. The **authoritative re-sim** (canonical build, headless or automated) loads the puzzle, pins
-   seed + det-mode + FPS, applies the input log, and reads the *outcome* (goal reached? solution
-   tick? pieces? items used?) from `level_complete` / goal state.
-3. The official result = the re-sim outcome. A finish claim the re-sim does not reproduce ⇒ **no
-   contest** (not a silent loss).
-
-**Headless/automated re-sim** is the gating dependency. Approach: a "reference runtime" = the game
-with FNA3D/SDL replaced by null backends (no window, no audio), or a dedicated minimized client
-driven by the mod. This is **v0.3 ranked scope** and the **top technical risk**. Until it exists,
-ranked is "provisional" (soft validation, Part 9).
+The relay is authoritative for the series score: it pairs the two players, relays their build/finish
+data, and decides each round from the players' **reported finishes** (completion → finish_tick →
+deaths → items_used; Part 3). Cross-platform float physics is not bit-identical, so results are
+**not** decided by comparing client state hashes across platforms — the integrity check is
+**same-platform desync detection** (Part 10): a hash mismatch between same-platform clients voids the
+match (no-contest), and locked-settings enforcement (Part 9) stops speed/pause tampering.
 
 ## Part 7 — MatchConfig
 
@@ -262,58 +240,43 @@ ranked is "provisional" (soft validation, Part 9).
 }
 ```
 
-## Part 8 — Replay format
+## Part 8 — Live build share
 
-```json
-{
-  "replay_version": 1,
-  "match_config": { },
-  "rounds": [
-    {
-      "round": 0,
-      "player_id": "p1",
-      "input_log": { "build": [], "sim": [], "seed": 123456789, "tick_rate": 60 },
-      "checkpoints": [ {"tick":600,"state_hash":"sha256:...","platform":"linux64"} ],
-      "finish_state": {"completed":true,"finish_tick":1740,"pieces":3,"items_used":5,"resets":1},
-      "result": {"win":true,"reason":"finish_tick"}
-    }
-  ]
-}
-```
-One input log per player per round; checkpoints carry `platform` (compared same-platform only). A
-replay is **portable** (data + seed) so the re-sim agent and ghost player both consume it.
+There is no recorded replay/ghost file. The opponent is shown **live**: each player streams its
+position + anim state every frame, and at sim start broadcasts its locked-in build placements
+(`build <name> <x> <y>` … `buildend`), which the opponent draws as translucent ghost items. The
+relay scores from the per-round `finish` (completion, finish_tick, deaths, items_used). Same-platform
+clients also stream periodic checkpoint state-hashes (carrying `platform`, compared same-platform
+only) for desync detection (Part 10).
 
 ## Part 9 — Anti-cheat & validation
 
-Hashes recorded: game build-id, framework version, level hash, ruleset hash, replay hash. A result
-is **provisionally** valid iff: same `level_hash` + `ruleset_hash`, complete input log, finish
-event present, finish tick self-consistent on the submitter's local replay, and (when
-same-platform) checkpoint hashes agree. A result is **authoritative** only after the canonical
-re-sim (Part 6) reproduces the claimed outcome. `sim = 1` mods other than the sanctioned ranked
-build invalidate ranked (framework surfaces this integrity signal). **Locked-settings
+The relay is authoritative for the series score (Part 6). Same-platform clients exchange checkpoint
+state-hashes; a mismatch ⇒ **no-contest** (Part 10). `sim = 1` mods other than the sanctioned ranked
+build invalidate ranked (the framework surfaces this integrity signal). **Locked-settings
 enforcement:** vanilla speed settings (game speed / pause / fast-forward via `World_SetGameSpeed`;
 `World_SetMaximumSpeed`) are locked for the whole head-to-head match (Part 5); detected tampering
-⇒ no-contest.
+⇒ no-contest. If stronger anti-cheat is ever needed, cheap server-side plausibility checks
+(finish-tick within a level's known min-solve bound, sane item/death counts) are preferred.
 
 ## Part 10 — Desync handling
 
 `STATE_HASH_INTERVAL = 300` ticks. Cross-platform hash mismatch is **expected, not a desync** —
-only same-platform mismatch marks a desync. On desync: mark match, keep playing visually, withhold
-the automatic ranked result, save a diagnostic bundle (MatchConfig, input logs, hashes+platform,
-client logs, build-ids, level hash).
+only same-platform mismatch marks a desync. On desync: mark match no-contest, keep playing visually,
+withhold the ranked result, save a diagnostic (tick, platform, seed, both hashes).
 
 ## Part 11 — Networking
 
-Client-server. Server: create matches, send MatchConfig, relay build/finish data, store replays,
-produce provisional results, and (v0.3) host the authoritative re-sim. Because the board isn't
-shared, the network path carries **compact input logs + finish claims + checkpoint hashes**, not a
-per-tick stream — cheap and latency-tolerant.
+Client-server. Server: create matches, send MatchConfig, relay live position/build + finish data,
+and score the series. Because the board isn't shared, the network path carries **live position
+frames + build placements + finish claims + checkpoint hashes**, not a full per-tick physics stream.
+A mid-match drop is held briefly for a reconnect window before awarding the opponent.
 
 ## Part 12 — Ranked system
 
-1v1, best-of-3, Elo/Glicko, random ranked-pool map, disconnect = loss unless reconnect, invalid
-replay = no contest. Rank ladder: Bronze Spoon → Silver Spoon → Gold Spoon → Master Chef → Iron
-Stomach → Competitive Eater → Grand Muncher → Top Eets.
+1v1, best-of-3, Elo (K=32, default 1000, keyed by client UUID), random ranked-pool map, disconnect =
+loss unless reconnect within the window, same-platform desync = no contest. Rank ladder: Bronze Spoon
+→ Silver Spoon → Gold Spoon → Master Chef → Iron Stomach → Competitive Eater → Grand Muncher → Top Eets.
 
 ## Part 13 — Level pool & format
 
@@ -328,59 +291,48 @@ tutorial-only. Per-level metadata JSON carries `level_id`, `name`, `source`, `ra
 ## Part 14 — File layout
 
 ```
-hop_on_eets.cpp                 # the mod (compiled to .dll/.so, packed to .eetsmod)
-hop_on_eets.cfg                 # framework manifest — MUST include: sim = 1, min_framework = 0.18.0
-hop_on_eets.assets/             # overlaid onto Data/ before engine scan
-  Levels/Game/<curated levels>  # ranked pool (loose files; LEVELS: prefix)
-  HopOnEets/                    # mod-owned data dir under Data/
-    rulesets/ranked_v0.json
-    levels/pool_v0.json
-    net/client_config.json
-# runtime (written under the game dir / mod save area):
-#   replays/   logs/
+hop_on_eets.cpp                 # the mod (one TU; src/*.h #included; compiled to .dll/.so, packed to .eetsmod)
+src/*.h                         # state / hash / determinism / levels / net / ws_client / recorder / ghostview / menu / match / hud
+hop_on_eets.cfg                 # framework manifest — MUST include: sim = 1, min_framework
+netproto/                       # relay + bridge + protocol + e2e (TypeScript, zero runtime deps)
 ```
-The framework manifest is **`<name>.cfg`**, not `mod.json`, and the framework is **`eetsmod`
-0.18.0**. The mod reads its own JSON data (rulesets/levels/net) from `assets/HopOnEets/`.
+The framework manifest is **`<name>.cfg`**, not `mod.json`. The ranked level pool is built at runtime
+by walking the engine's `LevelManager` (`src/levels.h`) — not shipped as data files. Rules/tick/relay
+URL are compile-time constants in `src/state.h`.
 
 ## Part 15 — Milestones
 
 **v0.1 — Foundation (feasible on framework as-is):** *implemented in `hop_on_eets.cpp` — see README.*
-- **M1 Replay foundation** — *[done]* capture build-phase placements (`object_spawn` while
-  `!IsSimulating()`) + finish (`level_complete`); serialize the replay JSON; confirm finish tick.
+- **M1 Build capture** — *[done]* capture build-phase placements (`object_spawn` while
+  `!IsSimulating()`), reconcile to the live objects at sim start, confirm finish tick.
 - **M2 Determinism harness** — *[done, with caveat]* pin seed (`DAT_00ee3bf0`/`DAT_005a1790`, Win) /
   FPS; lock vanilla game speed; per-run `get_state_hash` sequence; reset-rerun MATCH/DIVERGE check.
-  *Caveat:* "tick" is a sim-frame counter (`IsSimulating && !IsPaused`, speed locked); the true
-  engine tick needs a step hook on the clock subsystem (`DAT_00ee3ca0` / vftable `0x56cf34`) —
-  follow-up. Native `TICK_RATE` still to be confirmed; inventory read is a follow-up RE task.
-- **M3 Ghost race** — *[done]* load an opponent ghost timeline; draw it in the level as a
-  world-space translucent ghost Eets (identity camera on single-screen levels — `spawner` proves
-  render coords == world coords; scrolling levels would need the GFX view matrix `FUN_0048f2c0`);
-  HUD shows live time + AHEAD/BEHIND. Custom `Eets::UI` menu (F6) for match/ghost/score.
-- **M4 Local mirror scoring** — *[done]* score the round vs the ghost by the tiebreakers; best-of
-  match tally; ranked-ready result JSON.
+  Now reads the engine's real sim-tick counter (not a per-Update count).
+- **M3 Ghost view** — *[done]* draw the opponent as a world-space translucent ghost Eets (identity
+  camera on single-screen levels — `spawner` proves render coords == world coords; scrolling levels
+  would need the GFX view matrix `FUN_0048f2c0`); HUD round/build clocks. Custom `Eets::UI` menu (F6).
+- **M4 Scoring** — *[done]* score the round by the tiebreakers; best-of match tally.
 
-**v0.2 — Online mirror:** *[prototype done — `netproto/` (TS) + mod net client]* realtime relay
-(mod → localhost TCP → bridge → WebSocket → relay); private host/join by 6-char code or ranked
-matchmaking; live opponent position + locked-in build streamed and drawn as a ghost Eets; 15s build
-timer force-starts the sim for both; provisional result by tiebreakers. Adds live frames on top of
-the input-log model of Parts 8/11 (authoritative re-sim is still v0.3); see `docs/net-protocol.md`.
+**v0.2 — Online mirror:** *[done — `netproto/` (TS) + mod net client]* realtime relay (mod → WS/TLS
+→ relay); private host/join by 6-char code or ranked matchmaking; live opponent position + locked-in
+build streamed and drawn as a ghost Eets; build timer force-starts the sim for both; round result by
+tiebreakers; see `docs/net-protocol.md`.
 
-**v0.3 — Ranked + cross-platform validation:** account/player IDs, ranked queue, Bo3, rating,
-leaderboard, **and the authoritative headless/automated re-sim** (Part 6).
+**v0.3 — Ranked:** client-UUID identity, ranked queue, Bo3, Elo ladder + win screen, per-round level
+pool, reconnect window, forfeit. Relay-authoritative scoring from reported finishes.
 
 ## Part 16 — Future features
 
-Attack mode (deterministic disruptions logged as inputs), draft mode, community maps with a
-solvability re-sim gate (depends on headless re-sim).
+Attack mode (deterministic disruptions), draft mode, community maps. If a mid-sim **input track** is
+ever recorded (the activations the build-only capture omits), deeper validation / spectating opens up.
 
 ## Part 17 — Risks
 
-1. **Headless re-sim** (FNA3D/SDL stubbing) — top risk; gates cross-platform ranked.
-2. **Cross-OS FP divergence** — designed around via input-log + canonical re-sim; small bounce
-   differences can still flip an outcome, so the canonical build is the sole source of truth.
-3. **Sim-step hook / tick source** — exact step method + tick offset still to be pinned (M2).
-4. **Inventory + activation structures** — RE tasks (M3/M4).
-5. **Build-id coupling** — addresses/globals are build-specific; reuse the loader's build-id guard
+1. **Cross-OS FP divergence** — cross-platform physics isn't bit-identical, so ranked never compares
+   physics across platforms; integrity = same-platform desync detection + relay-authoritative scoring.
+2. **Sim-step hook / tick source** — uses the engine's real sim-tick counter; confirmed (M2).
+3. **Inventory + activation structures** — RE tasks (M3/M4).
+4. **Build-id coupling** — addresses/globals are build-specific; reuse the loader's build-id guard
    and resolve per-platform.
 
 ---
@@ -390,7 +342,6 @@ solvability re-sim gate (depends on headless re-sim).
 - **Spec fidelity:** every open question (Part 0) carries a concrete binary/source citation; no
   loose-draft assumption survives unflagged.
 - **Determinism harness (M2):** with the probe active, build+run a known level twice and confirm
-  **identical** `get_state_hash` sequences (proves seed/det-mode/FPS pinning + speed lock). The M1
-  recorder must reproduce the finish tick on local playback.
+  **identical** `get_state_hash` sequences (proves seed/det-mode/FPS pinning + speed lock).
 - **Packaging:** `eetsmod pack hop_on_eets.cpp -o hop_on_eets.eetsmod` compiles under
   `g++ -std=c++17`; drop into `<game>/mods`, enable via the in-game MODS button.

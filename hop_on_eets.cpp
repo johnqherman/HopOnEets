@@ -6,9 +6,9 @@
 //   src/state.h       shared config, globals, types, helpers
 //   src/hash.h        FNV-1a state snapshot (determinism / desync)
 //   src/determinism.h pin seed/FPS/det-mode, lock game speed, force-start
-//   src/net.h         realtime net client (TCP -> bridge -> WebSocket -> relay)
-//   src/recorder.h    replay/ghost/result I/O + build/sim lifecycle
-//   src/ghostview.h   draw the opponent (live or recorded) + their build in-level
+//   src/net.h         realtime net client (WebSocket/TLS -> relay)
+//   src/recorder.h    build-placement capture (shared live to the opponent) + build/sim lifecycle
+//   src/ghostview.h   draw the live opponent + their build in-level
 //   src/menu.h        custom Eets::UI menu (the live config surface)
 //   src/match.h       match lifecycle: round resolution, engine-event handlers, per-frame state machine
 //   src/hud.h         all in-game overlay drawing (status, clocks, deaths, ghost, series banner, menu)
@@ -34,7 +34,6 @@
 #include "src/levels.h"
 #include "src/net.h"
 #include "src/recorder.h"
-#include "src/resim.h"
 #include "src/ghostview.h"
 #include "src/menu.h"
 #include "src/match.h"      // round resolution + per-frame match state machine (logic)
@@ -54,10 +53,10 @@ static std::string gen_uuid() {
 extern "C" void EetsMod_Init() {
 	// Almost everything is a fixed competitive constant (see state.h); the shipped .cfg exposes nothing
 	// tunable to end users. Only these hidden dev/deployment knobs are still read from config (absent from
-	// the .cfg, so not shown - a dev can still set them in the save file), plus the env-driven re-sim args.
+	// the .cfg, so not shown - a dev can still set them in the save file).
 	auto cfgI = [](const char* k, int d) { return SaveGetInt(MOD, k, ConfigGetInt(MOD, k, d)); };
 	auto cfgS = [](const char* k, const char* d) { const char* v = SaveGet(MOD, k, ConfigGet(MOD, k, d)); return std::string(v ? v : d); };
-	g_online       = true;                       // always-on multiplayer (forced off below for the headless re-sim verifier)
+	g_online       = true;                       // always-on multiplayer
 	g_playerUuid   = cfgS("player_uuid", "");    // stable Elo identity; generated once per install, then persisted
 	if (g_playerUuid.empty()) { g_playerUuid = gen_uuid(); SaveSet(MOD, "player_uuid", g_playerUuid.c_str()); }
 	g_pinSeed      = cfgI("pin_seed", 0) != 0;   // solo determinism self-test (Phase C); matches always pin via g_matched
@@ -65,16 +64,6 @@ extern "C" void EetsMod_Init() {
 	const char* savedName = SaveGet(MOD, "player_id", nullptr);   // a custom name set via the F6 menu (persisted)
 	g_nameManual   = (savedName && *savedName);
 	g_playerId     = g_nameManual ? net_safe_id(savedName) : std::string("p1");   // else "p1" until the profile name is adopted below
-	// re-sim is parameterized by env first (the headless launcher sets these per run), then cfg
-	const char* envFile = getenv("HOE_RESIM_FILE"); const char* envLvl = getenv("HOE_RESIM_LEVEL");
-	const char* envExit = getenv("HOE_RESIM_EXIT");
-	g_resimFile  = (envFile && *envFile) ? std::string(envFile) : cfgS("resim_file", "");
-	g_resimLevel = envLvl ? atoi(envLvl) : cfgI("resim_level", -1);
-	g_resimExit  = envExit ? atoi(envExit) != 0 : cfgI("resim_exit", 1) != 0;
-	if (!g_resimFile.empty() && resim_parse(g_resimFile)) {   // batch verifier: re-sim an input log, write a verdict
-		g_resimState = RS_INIT; g_matchActive = true; g_online = false;   // headless verifier runs offline - no relay
-		Eets::Log("hop_on_eets: RESIM mode - re-simulating %s (headless verifier, exit_on_done=%d)", g_resimFile.c_str(), g_resimExit ? 1 : 0);
-	}
 	refresh_player_id();   // adopt the vanilla profile name if one is already active at load
 	if (g_online && net_connect()) g_netMsg[0] = 0;   // connected: clear the default "offline" (identity shows as "User: <name>")
 	Eets::Log("hop_on_eets: ready (tick=%d build=%ds online=%d) - F6 opens the match menu",
@@ -129,7 +118,6 @@ extern "C" void EetsMod_OnKey(int key, int mods, int down) {
 extern "C" void EetsMod_Update() {
 	net_poll();
 	net_reconnect_tick();   // recover from a mid-match network drop (relay holds the match ~20s)
-	if (g_resimState != RS_OFF && g_resimState != RS_DONE) resim_tick();   // drive the headless verifier
 	match_update();   // match lifecycle / state machine (src/match.h)
 	draw_hud();       // all in-game overlay drawing (src/hud.h)
 }

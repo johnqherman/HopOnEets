@@ -7,8 +7,8 @@ mod  <-- localhost TCP, newline text -->  bridge  <-- WebSocket JSON -->  relay 
 ```
 
 The realtime leg (bridge ↔ relay) is a WebSocket. The relay pairs two players and **relays live
-frames** (position, build) between them in real time — it does not simulate. Authoritative
-cross-platform re-sim is still v0.3 (spec Parts 6, 11). Reference impl + e2e test: `netproto/`.
+frames** (position, build) between them in real time — it does not simulate; it scores the series
+from the players' reported finishes. Reference impl + e2e test: `netproto/`.
 
 ## Connect modes
 
@@ -35,13 +35,15 @@ cross-platform re-sim is still v0.3 (spec Parts 6, 11). Reference impl + e2e tes
 | `desync` | C→S | `tick` | client detected a same-platform hash mismatch |
 | `no_contest` | S→C | `reason, tick` | match voided (desync); score withheld |
 | `finish` / `opp_finish` | C→S / S→C | `finish_tick, completed, items_used` | round finished |
-| `submit_replay` | C→S | `round, platform, log` | ranked: upload the input log (base64) for authoritative re-sim |
-| `result` | S→C | `winner, reason, you_wins, opp_wins, provisional` | provisional round outcome + series score |
-| `authoritative` | S→C | `kind, winner, reason, round` | official result from the re-sim verifier (overrides provisional) |
-| `series_over` | S→C | `winner, you_wins, opp_wins` | best-of-3 decided (or awarded on disconnect) |
-| `opponent_left` | S→C | — | opponent disconnected (→ `series_over` win for whoever remains) |
+| `forfeit` | C→S | — | intentional leave; the following disconnect awards the opponent immediately |
+| `result` | S→C | `winner, reason, you_wins, opp_wins` | round outcome + series score |
+| `series_over` | S→C | `winner, you_wins, opp_wins, ranked, elo_old, elo_new, forfeit` | best-of-3 decided (or awarded on disconnect/forfeit) |
+| `opponent_dropped` | S→C | `seconds` | opponent dropped; match held open for a reconnect window |
+| `opponent_rejoined` | S→C | — | opponent reconnected within the window; the round restarts |
+| `rejoin` | S→C | `opponent, ranked, you_wins, opp_wins` | you reconnected; resume the held match |
+| `opponent_left` | S→C | — | opponent gone (forfeit, or reconnect window expired) → `series_over` for whoever remains |
 
-Tiebreakers (relay `decide`): completion → finish_tick → items_used (spec Part 3).
+Tiebreakers (relay `decide`): completion → finish_tick → deaths → items_used (spec Part 3).
 The relay is authoritative for the series score; best-of-3 (`WINS_NEEDED = 2`).
 
 **Checkpoint hashes:** clients sample a state hash every `hash_interval` sim ticks and stream it
@@ -55,12 +57,13 @@ diagnostic (`Log/hop_on_eets_desync_*.json`: tick, platform, seed, both hashes).
 ```
 mod -> bridge:  hello <id> | host | join <CODE> | queue | ready | build <name> <x> <y> | buildend |
                 pos <tick> <x> <y> | hash <tick> <hex> <platform> | desync <tick> |
-                replay <round> <platform> <base64log> | finish <tick> <0|1> <items>
+                forfeit | finish <tick> <0|1> <items>
 bridge -> mod:  code <CODE> | joinfail <CODE> | match <id> <opp> <ranked0|1> <level> <seed> |
                 countdown <secs> | ob <name> <x> <y> | obend | g <tick> <x> <y> |
                 oh <tick> <hex> <platform> | nocontest <reason> <tick> |
                 oppfin <tick> <0|1> <items> | result <winner> <reason> <yw> <ow> |
-                series <winner> <yw> <ow> | auth <kind> <winner> <reason> | oppleft
+                series <winner> <yw> <ow> <ranked> <eloOld> <eloNew> <forfeit> |
+                oppdrop <secs> | opprejoin | rejoin <opp> <ranked> <yw> <ow> | oppleft
 ```
 
 The bridge buffers mod lines until its WebSocket is up, so the mod can connect and queue
@@ -68,11 +71,10 @@ immediately.
 
 ## Validation status
 
-- **v0.2 (now):** provisional results from the relay; live frames are advisory/visual.
-  **Same-platform** desync detection is live via checkpoint hashes (mismatch ⇒ no-contest).
-- **v0.3:** authoritative re-sim of the input log on a canonical build (the only valid
-  **cross-platform** truth; cross-platform checkpoint hashes are never compared — FP physics, spec
-  Part 5/6). `wss://` + auth land in the bridge/relay, not the plugin.
+- Results come from the players' reported finishes; the relay is authoritative for the series score.
+  Live frames are advisory/visual. **Same-platform** desync detection is live via checkpoint hashes
+  (mismatch ⇒ no-contest). Cross-platform checkpoint hashes are never compared — FP physics legitimately
+  differs (spec Part 5).
 
 ## Offline
 

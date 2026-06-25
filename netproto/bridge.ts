@@ -48,7 +48,6 @@ export function startBridge(opts: BridgeOpts): { tcp: net.Server; close(): void 
       case 'pos':    relay.send({ type: 'pos', tick: +a[1], x: +a[2], y: +a[3], emo: a[4] || 'h', mot: a[5] || 'w', flip: a[6] ? +a[6] : 0 }); break;   // a[4..6] = opponent anim state
       case 'hash':   relay.send({ type: 'hash', tick: +a[1], hash: a[2], platform: a[3] }); break;
       case 'desync': relay.send({ type: 'desync', tick: +a[1] }); break;
-      case 'replay': relay.send({ type: 'submit_replay', round: +a[1], platform: a[2], log: a[3] }); break;   // a[3] = base64 input log
       case 'finish': relay.send({ type: 'finish', finish_tick: +a[1], completed: a[2] === '1', items_used: +a[3], deaths: a[4] ? +a[4] : 0 }); break;
       case 'forfeit': relay.send({ type: 'forfeit' }); break;
     }
@@ -74,7 +73,6 @@ export function startBridge(opts: BridgeOpts): { tcp: net.Server; close(): void 
           case 'opp_finish':    toMod(`oppfin ${m.finish_tick} ${m.completed ? 1 : 0} ${m.items_used}`); break;
           case 'opp_hash':      toMod(`oh ${m.tick} ${m.hash} ${m.platform}`); break;
           case 'no_contest':    toMod(`nocontest ${m.reason} ${m.tick ?? -1}`); break;
-          case 'authoritative': toMod(`auth ${m.kind} ${m.winner || '-'} ${m.reason}`); break;
           case 'result':        toMod(`result ${m.winner} ${m.reason} ${m.you_wins} ${m.opp_wins}`); break;
           case 'elo':           toMod(`elo ${m.value ?? 0}`); break;
           case 'series_over':   toMod(`series ${m.winner} ${m.you_wins} ${m.opp_wins} ${m.ranked ? 1 : 0} ${m.elo_old ?? 0} ${m.elo_new ?? 0} ${m.forfeit ? 1 : 0}`); break;

@@ -1,21 +1,19 @@
 // Hop On Eets relay server (v0.2). Zero runtime deps; WebSocket. Pairs two players and relays
-// REAL-TIME position frames between them (plus build/finish), then reports a provisional result.
-// Two ways in: private host/join by code, or ranked matchmaking queue. The server does not
-// simulate; authoritative cross-platform re-sim is v0.3 (see docs/hop-on-eets-spec.md Part 6).
+// REAL-TIME position frames between them (plus build/finish), then reports the result. Two ways
+// in: private host/join by code, or ranked matchmaking queue. The relay is authoritative for the
+// series score (it does not simulate - results come from the players' reported finishes).
 import * as http from 'http';
 import type * as net from 'net';
 import * as fs from 'fs';
 import * as ws from './ws';
 import { modLineToMsg, msgToModLine } from './modproto';   // mod text protocol <-> relay JSON (direct-connect clients)
-import type { RankedVerifier } from './verifier';   // type-only (verifier imports decideOutcome from here)
 
 export interface Finish { completed: boolean; finish_tick: number; items_used: number; deaths?: number; }
-interface Peer { id: string; name: string; match: string | null; opp: ws.WSConn | null; finish: Finish | null; hostCode: string | null; wins: number; ready: boolean; noContest: boolean; ranked: boolean; platform: string; log: string | null; roundTimer: ReturnType<typeof setTimeout> | null; forfeited: boolean; }
+interface Peer { id: string; name: string; match: string | null; opp: ws.WSConn | null; finish: Finish | null; hostCode: string | null; wins: number; ready: boolean; noContest: boolean; ranked: boolean; roundTimer: ReturnType<typeof setTimeout> | null; forfeited: boolean; }
 // a match held open while a dropped player has a chance to reconnect (keyed by their uuid)
 interface Held { oppConn: ws.WSConn; match: string; dropWins: number; ranked: boolean; timer: ReturnType<typeof setTimeout>; }
 // id = a stable client-generated UUID (the Elo key; names are mutable/spoofable so they must NOT key Elo).
 // name = the display name (the player's profile name), shown to the opponent but never used for identity.
-export interface RelayOpts { verify?: RankedVerifier; }   // when set, ranked rounds are re-sim-verified (authoritative)
 const BEST_OF = 3, WINS_NEEDED = 2;   // first to 2 round wins takes the series
 
 // ---- ELO ladder (ranked only). Persisted to a JSON file on the relay host (the VPS); keyed by player
@@ -35,12 +33,11 @@ function applyElo(winnerId: string, loserId: string) {
 }
 export type Verdict = { winner: 'you' | 'opponent' | 'tie'; reason: string };
 
-// tiebreakers: completion, then (completers only) finish_tick, items_used (spec Part 3). Top-level +
-// exported so the authoritative verifier (verifier.ts) decides re-sim outcomes with the EXACT same rule as
-// the relay. If NEITHER player solves the puzzle the round is a draw - a non-solver must never win on
-// finish_tick/items_used, so those tiebreakers only apply when both completed. A draw scores no round win;
-// the relay replays the round (next countdown) until someone solves it.
-export function decideOutcome(a: Finish, b: Finish): { self: Verdict; opp: Verdict } {
+// tiebreakers: completion, then (completers only) finish_tick, deaths, items_used (spec Part 3). If NEITHER
+// player solves the puzzle the round is a draw - a non-solver must never win on finish_tick/items_used, so
+// those tiebreakers only apply when both completed. A draw scores no round win; the relay replays the round
+// (next countdown) until someone solves it.
+function decideOutcome(a: Finish, b: Finish): { self: Verdict; opp: Verdict } {
   let win: boolean | null; let reason: string;
   if (a.completed !== b.completed) { win = a.completed; reason = 'completion'; }
   else if (!a.completed) { win = null; reason = 'both_failed'; }   // neither solved -> draw, replay the round
@@ -53,7 +50,7 @@ export function decideOutcome(a: Finish, b: Finish): { self: Verdict; opp: Verdi
   return { self, opp };
 }
 
-export function startRelay(port: number, log: (s: string) => void = () => {}, opts: RelayOpts = {}): http.Server {
+export function startRelay(port: number, log: (s: string) => void = () => {}): http.Server {
   let queue: ws.WSConn[] = [];
   let nextMatch = 1;
   const BUILD_SECONDS = 45;    // synced build phase; both clients start their timer on `countdown`
@@ -76,8 +73,8 @@ export function startRelay(port: number, log: (s: string) => void = () => {}, op
   function pair(a: ws.WSConn, b: ws.WSConn, ranked: boolean): void {
     const match = 'hoe_' + String(nextMatch++).padStart(6, '0');
     const A = peers.get(a)!, B = peers.get(b)!;
-    A.match = match; A.opp = b; A.finish = null; A.wins = 0; A.ready = false; A.noContest = false; A.ranked = ranked; A.log = null;
-    B.match = match; B.opp = a; B.finish = null; B.wins = 0; B.ready = false; B.noContest = false; B.ranked = ranked; B.log = null;
+    A.match = match; A.opp = b; A.finish = null; A.wins = 0; A.ready = false; A.noContest = false; A.ranked = ranked;
+    B.match = match; B.opp = a; B.finish = null; B.wins = 0; B.ready = false; B.noContest = false; B.ranked = ranked;
     const level = pickLevel(), seed = pickSeed();   // round 1's level + seed (every round picks fresh - see startRound)
     const cfg = (selfName: string, oppName: string, selfElo: number, oppElo: number) => ({
       type: 'match_config', match_id: match, mode: 'solution_race',
@@ -140,7 +137,7 @@ export function startRelay(port: number, log: (s: string) => void = () => {}, op
     if (B) B.roundTimer = t;
   }
 
-  const decide = decideOutcome;   // relay scores rounds with the same rule the verifier uses
+  const decide = decideOutcome;   // relay scores each round by the shared tiebreaker rule
 
   function maybeResult(conn: ws.WSConn): void {
     const p = peers.get(conn); if (!p || !p.opp) return;
@@ -161,21 +158,10 @@ export function startRelay(port: number, log: (s: string) => void = () => {}, op
     else return;   // we failed but the opponent is still racing -> wait
     clearRoundTimer(p); clearRoundTimer(q);   // round resolved -> stop the cap clock
     if (r.self.winner === 'you') p.wins++; else if (r.self.winner === 'opponent') q.wins++;
-    conn.send({ type: 'result', ...r.self, you_wins: p.wins, opp_wins: q.wins, provisional: true });
-    p.opp.send({ type: 'result', ...r.opp, you_wins: q.wins, opp_wins: p.wins, provisional: true });
+    conn.send({ type: 'result', ...r.self, you_wins: p.wins, opp_wins: q.wins });
+    p.opp.send({ type: 'result', ...r.opp, you_wins: q.wins, opp_wins: p.wins });
     p.finish = null; q.finish = null;                 // ready for the next round
     log(`result ${p.match}: ${r.self.winner} (series ${p.wins}-${q.wins})`);
-    if (p.ranked && opts.verify && p.log && q.log) {   // hand the round to the authoritative re-sim (async)
-      const round = p.wins + q.wins, cA = conn, cB = p.opp, mid = p.match!;
-      const subA = { player: p.id, platform: p.platform, log: p.log };
-      const subB = { player: q.id, platform: q.platform, log: q.log };
-      p.log = null; q.log = null;
-      opts.verify(mid, round, subA, subB).then((off) => {
-        const msg = { type: 'authoritative', kind: off.kind, winner: off.winner ?? '', reason: off.reason, round };
-        cA.send(msg); cB.send(msg);
-        log(`authoritative ${mid} r${round}: ${off.kind} ${off.winner ?? '-'} (${off.reason})`);
-      }).catch((e) => log(`verify error ${mid}: ${e}`));
-    }
     if (p.wins >= WINS_NEEDED || q.wins >= WINS_NEEDED) {   // best-of-3 decided
       const pWon = p.wins >= WINS_NEEDED;
       let pE = { old: 0, neu: 0 }, qE = { old: 0, neu: 0 };
@@ -199,7 +185,7 @@ export function startRelay(port: number, log: (s: string) => void = () => {}, op
   const server = http.createServer((_req, res) => { res.writeHead(426); res.end('upgrade required'); });
   server.on('upgrade', (req, socket) => {
     const conn = ws.accept(req, socket as net.Socket);
-    peers.set(conn, { id: '?', name: '?', match: null, opp: null, finish: null, hostCode: null, wins: 0, ready: false, noContest: false, ranked: false, platform: '', log: null, roundTimer: null, forfeited: false });
+    peers.set(conn, { id: '?', name: '?', match: null, opp: null, finish: null, hostCode: null, wins: 0, ready: false, noContest: false, ranked: false, roundTimer: null, forfeited: false });
     const dispatch = (m: any) => {
       const p = peers.get(conn); if (!p) return;
       switch (m.type) {
@@ -257,9 +243,6 @@ export function startRelay(port: number, log: (s: string) => void = () => {}, op
         }
         case 'forfeit':   // intentional leave: the following disconnect awards the opponent immediately (no reconnect hold)
           p.forfeited = true;
-          break;
-        case 'submit_replay':   // client uploads its input log (base64) for authoritative re-sim
-          p.platform = String(m.platform ?? p.platform); p.log = String(m.log ?? '');
           break;
         case 'finish':
           p.finish = { completed: !!m.completed, finish_tick: m.finish_tick | 0, items_used: m.items_used | 0, deaths: m.deaths | 0 };
@@ -328,18 +311,5 @@ export function startRelay(port: number, log: (s: string) => void = () => {}, op
 
 if (require.main === module) {
   const port = parseInt(process.env.PORT || '38500', 10);
-  const opts: RelayOpts = {};
-  if (process.env.EETS_DIR) {   // production: re-sim ranked rounds on the canonical build at EETS_DIR
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { makeVerifier, ShellResimRunner } = require('./verifier');
-    const fs = require('fs'), os = require('os'), path = require('path');
-    const save = (mid: string, round: number, player: string, log: string) => {
-      const f = path.join(os.tmpdir(), `hoe_${mid}_r${round}_${player}.json`);
-      fs.writeFileSync(f, Buffer.from(log, 'base64'));   // logs arrive base64-encoded
-      return f;
-    };
-    opts.verify = makeVerifier(new ShellResimRunner(), save);
-    console.log('[relay] authoritative verifier ENABLED (EETS_DIR=' + process.env.EETS_DIR + ')');
-  }
-  startRelay(port, (s) => console.log('[relay]', s), opts);
+  startRelay(port, (s) => console.log('[relay]', s));
 }
