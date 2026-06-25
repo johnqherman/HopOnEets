@@ -1,6 +1,6 @@
 # eets-multiplayer-mod
 
-**Hop On Eets** — multiplayer / ranked competitive mod for *Eets*, built on the
+**Hop On Eets** — multiplayer / ranked competitive mod for _Eets_, built on the
 [`eets-mod-framework`](../eets-mod-framework) (native plugin loader, framework `0.18.0`).
 
 Competitive **solution racing**: both players get the same puzzle, same pinned seed, same
@@ -20,15 +20,15 @@ Builds clean for Linux (`.so`) and Windows (`.dll`); packs to one `.eetsmod`.
 
 ## Features
 
-| | |
-|---|---|
-| **Build capture (M1)** | build-phase placements captured + reconciled to the live build at sim start |
-| **Determinism (M2)** | pin FPS / seed / det-mode, lock vanilla game speed, state-hash seq, reset-rerun MATCH/DIVERGE |
-| **Live ghost (M3)** | draw the live opponent in-level as a translucent ghost Eets + their build items |
-| **Scoring (M4)** | score the round by the tiebreakers; best-of tally; relay-authoritative |
-| **Realtime online (v0.2)** | live opponent position + build over WebSocket; host/join by code; ranked queue |
-| **Build timer** | fixed build seconds, then the sim is force-started for both players |
-| **Custom menu** | one `Eets::UI` menu (**F6**) holds all settings + match controls; changes persist via `SaveSet` |
+|                            |                                                                                                 |
+| -------------------------- | ----------------------------------------------------------------------------------------------- |
+| **Build capture (M1)**     | build-phase placements captured + reconciled to the live build at sim start                     |
+| **Determinism (M2)**       | pin FPS / seed / det-mode, lock vanilla game speed, state-hash seq, reset-rerun MATCH/DIVERGE   |
+| **Live ghost (M3)**        | draw the live opponent in-level as a translucent ghost Eets + their build items                 |
+| **Scoring (M4)**           | score the round by the tiebreakers; best-of tally; relay-authoritative                          |
+| **Realtime online (v0.2)** | live opponent position + build over WebSocket; host/join by code; ranked queue                  |
+| **Build timer**            | fixed build seconds, then the sim is force-started for both players                             |
+| **Custom menu**            | one `Eets::UI` menu (**F6**) holds all settings + match controls; changes persist via `SaveSet` |
 
 ## Architecture
 
@@ -57,7 +57,7 @@ The mod is one translation unit: `hop_on_eets.cpp` (thin entry layer) `#include`
 ## Run (online quickstart)
 
 1. **Relay** (one, shared — or use the hosted `wss://hoe.raccoonlagoon.com`): `cd netproto && npm
-   install && npm run relay` (listens `:38500`; front with TLS for `wss://`).
+install && npm run relay` (listens `:38500`; front with TLS for `wss://`).
 2. **Mod**: `make pack`, drop `hop_on_eets.eetsmod` in `<game>/mods`, launch Eets, open the **MODS**
    button. The mod connects directly to the relay (`relay_url`, default the hosted one). In the **F6**
    menu: **Host game** (shares a code) / **Join by code** / **Ranked queue**. Both players build, the
@@ -97,4 +97,4 @@ This repo holds the mod, rulesets, level pool, networking, and tooling. It depen
 for loading, hooks, the engine API, and the RE address maps. Ships as one `.eetsmod` and declares
 `sim = 1` (it controls the simulation).
 
-Not affiliated with or endorsed by Klei Entertainment; *Eets* and its assets belong to their owners.
+Not affiliated with or endorsed by Klei Entertainment; _Eets_ and its assets belong to their owners.
