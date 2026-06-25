@@ -1,4 +1,5 @@
 #pragma once
+#include <cmath> // atan2f (opponent rotation)
 #include "state.h"
 
 // must report a finish even on failure (death/DNF) or relay stalls forever;
@@ -225,9 +226,29 @@ static void match_update() {
           char emo, mot;
           int flip;
           read_eets_anim(e, emo, mot, flip);
-          char pb[80];
-          snprintf(pb, sizeof(pb), "pos %ld %.1f %.1f %c %c %d", g_tick, ep.x,
-                   ep.y, emo, mot, flip);
+          Vector2 fac = Object_GetFacing(e);
+          float rot = atan2f(fac.y, fac.x); // engine's GetRotation = orientation off +x; mirrors tumbling
+          // the actual current motion (covers eat/land/emote/whale/turn the emo+mot enum misses); single
+          // space-free token. "-" if unavailable.
+          char tok[32] = "-";
+          if (MotionModel *mm = Object_GetMotionModel(e))
+            if (const char *nm = MotionModel_GetCurrentMotionName(mm))
+              if (nm[0]) {
+                size_t j = 0;
+                for (const char *p = nm; *p && j < sizeof(tok) - 1; ++p)
+                  if ((unsigned char)*p > ' ')
+                    tok[j++] = *p;
+                tok[j] = 0;
+                if (!j) tok[0] = '-', tok[1] = 0;
+              }
+          static char s_lastTok[32] = ""; // probe: log the motion token when it changes (confirm format)
+          if (strcmp(tok, s_lastTok) != 0) {
+            snprintf(s_lastTok, sizeof(s_lastTok), "%s", tok);
+            Eets::Log("hop_on_eets: motion token = '%s' (emo=%c)", tok, emo);
+          }
+          char pb[96];
+          snprintf(pb, sizeof(pb), "pos %ld %.1f %.1f %c %c %d %.3f %s", g_tick,
+                   ep.x, ep.y, emo, mot, flip, rot, tok);
           net_sendline(pb);
         }
         if (g_tick / HASH_INTERVAL >

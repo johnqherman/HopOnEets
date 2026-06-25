@@ -529,6 +529,8 @@ export function startRelay(
             emo: m.emo,
             mot: m.mot,
             flip: m.flip,
+            rot: m.rot ?? 0,
+            anim: m.anim ?? "-",
           });
           break;
         case "build":

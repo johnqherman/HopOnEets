@@ -19,8 +19,10 @@ static void net_handle(const std::string &ln) {
   unsigned long long hh = 0;
   char eC = 0, mC = 0;
   int fl = 0;
-  int gn =
-      sscanf(ln.c_str(), "g %ld %f %f %c %c %d", &t, &x, &y, &eC, &mC, &fl);
+  float rot = 0.0f;
+  char anim[40] = {0};
+  int gn = sscanf(ln.c_str(), "g %ld %f %f %c %c %d %f %39s", &t, &x, &y, &eC,
+                  &mC, &fl, &rot, anim);
   if (gn >= 3 && strncmp(ln.c_str(), "g ", 2) == 0) {
     (void)t;
     if (valid_pos(x, y)) {
@@ -32,6 +34,13 @@ static void net_handle(const std::string &ln) {
         g_liveEmotion = eC;
         g_liveMotion = mC;
         g_liveFlip = fl != 0;
+      }
+      if (gn >= 7)
+        g_liveRot = rot;
+      if (gn >= 8) {
+        anim[39] = 0;
+        strncpy(g_liveAnim, anim, sizeof(g_liveAnim) - 1);
+        g_liveAnim[sizeof(g_liveAnim) - 1] = 0;
       }
     }
   } else if (sscanf(ln.c_str(), "oh %ld %llx %39s", &t, &hh, a) == 3)
