@@ -1,9 +1,3 @@
-// ws_client.h - WebSocket client transport for the mod. The mod connects DIRECTLY to the relay over
-// ws:// or wss:// (no bridge): this layer does DNS + TCP + (for wss) TLS via the system OpenSSL loaded at
-// runtime with dlopen (no hard link dependency, graceful if absent) + the WebSocket handshake and masked
-// text framing. The relay speaks the mod's text protocol over WS frames (one line per frame), so net.h
-// keeps its text parser unchanged. Linux is implemented; Windows is a stub (online disabled there for now
-// - the native WinHTTP WebSocket port is future work, like the other deferred Win pieces).
 #pragma once
 #include <string>
 #include <vector>
@@ -11,7 +5,6 @@
 #include <cstring>
 #include <cstdlib>
 
-// parsed ws/wss URL
 struct WscUrl { bool tls = false; std::string host; int port = 0; std::string path = "/"; bool ok = false; };
 [[maybe_unused]] static WscUrl wsc_parse(const std::string& url) {
 	WscUrl u; std::string s = url;
@@ -41,9 +34,8 @@ struct WscUrl { bool tls = false; std::string host; int port = 0; std::string pa
 }
 
 #ifdef _WIN32
-// ---- Windows: WinHTTP WebSocket (native TLS + framing). Receive blocks, so it runs on a Win32 thread
-// feeding a CRITICAL_SECTION-guarded inbox that wsc_poll drains. Win32 threads (not std::thread) avoid the
-// mingw threading-model dependency. Cross-compiles with mingw; UNVERIFIED at runtime (no Win test yet). ----
+// Windows: WinHTTP WebSocket; recv blocks -> Win32 thread feeds CRITICAL_SECTION inbox that wsc_poll drains.
+// Win32 threads (not std::thread) dodge the mingw threading-model dependency; unverified at runtime
 #include <windows.h>
 #include <winhttp.h>
 #include <vector>
@@ -57,7 +49,7 @@ static volatile bool g_whRun = false, g_whOpen = false;
 
 static void wsc_close() {
 	g_whRun = false;
-	if (g_whWs) WinHttpWebSocketClose(g_whWs, WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, nullptr, 0);   // unblocks the recv thread
+	if (g_whWs) WinHttpWebSocketClose(g_whWs, WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, nullptr, 0);   // unblocks recv thread
 	if (g_whThread) { WaitForSingleObject(g_whThread, 3000); CloseHandle(g_whThread); g_whThread = nullptr; }
 	if (g_whWs)      { WinHttpCloseHandle(g_whWs); g_whWs = nullptr; }
 	if (g_whConn)    { WinHttpCloseHandle(g_whConn); g_whConn = nullptr; }
@@ -77,7 +69,7 @@ static DWORD WINAPI wh_recv_loop(LPVOID) {
 		if (type == WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE || type == WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE) {
 			EnterCriticalSection(&g_whCs); g_whInbox.push_back(acc); LeaveCriticalSection(&g_whCs);
 			acc.clear();
-		}   // *_FRAGMENT types: keep accumulating until the terminating message buffer
+		}   // *_FRAGMENT types: keep accumulating until terminating buffer
 	}
 	g_whOpen = false;
 	return 0;
@@ -124,8 +116,7 @@ static void wsc_poll(void (*onmsg)(const std::string&)) {
 #include <dlfcn.h>
 #include <ctime>
 
-// minimal runtime-loaded OpenSSL (only the calls we need). cert verification is intentionally skipped
-// (informal ladder); SNI is set so name-based vhosts / proxies route correctly.
+// runtime-loaded OpenSSL; SNI set for vhost routing
 struct WscSSL {
 	void* lib = nullptr;
 	const void* (*client_method)() = nullptr;
@@ -173,15 +164,13 @@ static std::string g_wsRx;
 
 static int wsc_raw_write(const void* p, int n) { return g_wsTls ? wsc_ssl().write(g_wsSsl, p, n) : (int)::send(g_wsFd, p, n, MSG_NOSIGNAL); }
 static int wsc_raw_read(void* p, int n)        { return g_wsTls ? wsc_ssl().read(g_wsSsl, p, n)  : (int)::recv(g_wsFd, p, n, 0); }
-// write all bytes, retrying transient non-blocking would-block (TLS WANT_READ/WRITE, EAGAIN) briefly
-// instead of treating it as a hard failure (which would spuriously drop the connection). Small control
-// frames almost always go in one write; the spin cap bounds a genuinely stuck socket.
+// write all bytes, retrying would-block (TLS WANT_READ/WRITE, EAGAIN) instead of dropping the connection
 static bool wsc_write_all(const char* p, size_t n) {
 	size_t o = 0; int spins = 0;
 	while (o < n) {
 		int w = wsc_raw_write(p + o, (int)(n - o));
 		if (w > 0) { o += (size_t)w; spins = 0; continue; }
-		if (++spins > 2000) return false;   // ~0.4s of would-block = treat as dead
+		if (++spins > 2000) return false;   // ~0.4s would-block = dead
 		usleep(200);
 	}
 	return true;
@@ -195,7 +184,7 @@ static void wsc_close() {
 }
 static bool wsc_up() { return g_wsOpen; }
 
-// build + send one masked frame (client frames MUST be masked per RFC 6455)
+// client frames must be masked per RFC 6455
 static void wsc_send_frame(unsigned char opcode, const std::string& s) {
 	if (!g_wsOpen) return;
 	std::string f; size_t n = s.size();
@@ -210,13 +199,12 @@ static void wsc_send_frame(unsigned char opcode, const std::string& s) {
 }
 static void wsc_send_text(const std::string& s) { wsc_send_frame(0x1, s); }
 
-// connect: DNS + TCP + (wss) TLS + WS handshake. Blocking with a short timeout (called on a menu action),
-// then the fd is switched to non-blocking for wsc_poll.
+// connect: DNS + TCP + (wss) TLS + WS handshake; blocking, then fd set non-blocking for wsc_poll
 static bool wsc_connect(const std::string& url) {
 	wsc_close();
 	WscUrl u = wsc_parse(url); if (!u.ok) return false;
 	g_wsTls = u.tls;
-	if (g_wsTls && !wsc_ssl().ok) return false;   // no OpenSSL available -> can't do wss
+	if (g_wsTls && !wsc_ssl().ok) return false;   // no OpenSSL -> can't do wss
 
 	char ports[16]; snprintf(ports, sizeof(ports), "%d", u.port);
 	addrinfo hints; memset(&hints, 0, sizeof(hints)); hints.ai_family = AF_UNSPEC; hints.ai_socktype = SOCK_STREAM;
@@ -242,7 +230,6 @@ static bool wsc_connect(const std::string& url) {
 		if (o.connect(g_wsSsl) != 1) { wsc_close(); return false; }
 	}
 
-	// WebSocket upgrade request
 	unsigned char rnd[16]; for (int i = 0; i < 16; i++) rnd[i] = (unsigned char)(rand() & 0xff);
 	std::string key = wsc_b64(rnd, 16);
 	char req[512];
@@ -251,29 +238,26 @@ static bool wsc_connect(const std::string& url) {
 		"Sec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n", u.path.c_str(), u.host.c_str(), key.c_str());
 	if (!wsc_write_all(req, (size_t)rn)) { wsc_close(); return false; }
 
-	// read the handshake response up to the blank line; accept on a "101" status
+	// accept on "101" status
 	std::string resp; char buf[512];
 	for (int tries = 0; tries < 64 && resp.find("\r\n\r\n") == std::string::npos; tries++) {
 		int n = wsc_raw_read(buf, sizeof(buf)); if (n <= 0) break; resp.append(buf, (size_t)n);
 	}
 	if (resp.find(" 101") == std::string::npos) { wsc_close(); return false; }
 
-	int fl = fcntl(fd, F_GETFL, 0); fcntl(fd, F_SETFL, fl | O_NONBLOCK);   // non-blocking for polling
+	int fl = fcntl(fd, F_GETFL, 0); fcntl(fd, F_SETFL, fl | O_NONBLOCK);
 	g_wsOpen = true;
-	// any bytes past the handshake are the first frames
+	// bytes past the handshake are the first frames
 	size_t hdr = resp.find("\r\n\r\n"); if (hdr != std::string::npos && hdr + 4 < resp.size()) g_wsRx.assign(resp, hdr + 4, std::string::npos);
 	return true;
 }
 
-// drain available frames, delivering each text message to onmsg. Replies to pings; closes on a close frame.
 static void wsc_poll(void (*onmsg)(const std::string&)) {
 	if (!g_wsOpen) return;
 	char buf[4096]; int n;
 	while ((n = wsc_raw_read(buf, sizeof(buf))) > 0) g_wsRx.append(buf, (size_t)n);
 	if (n == 0 && !g_wsTls) { wsc_close(); return; }   // plain TCP peer closed
-	// Parse ALL complete frames into local lists and consume them from g_wsRx FIRST, then dispatch. A
-	// handler (onmsg) may send "ready" etc. and even close the connection (clearing g_wsRx) - doing that
-	// mid-parse previously underflowed `size - off` and read out of bounds. Parse-then-dispatch is safe.
+	// parse + consume g_wsRx fully, THEN dispatch: onmsg may close (clearing g_wsRx), which underflowed mid-parse
 	std::vector<std::string> msgs, pongs; bool gotClose = false;
 	size_t off = 0, sz = g_wsRx.size();
 	while (off + 2 <= sz) {
@@ -282,16 +266,16 @@ static void wsc_poll(void (*onmsg)(const std::string&)) {
 		if (len == 126) { if (off + 4 > sz) break; len = ((unsigned char)g_wsRx[off + 2] << 8) | (unsigned char)g_wsRx[off + 3]; hl = 4; }
 		else if (len == 127) { if (off + 10 > sz) break; len = 0; for (int i = 0; i < 8; i++) len = (len << 8) | (unsigned char)g_wsRx[off + 2 + i]; hl = 10; }
 		size_t mk = masked ? 4 : 0;
-		if (off + hl + mk + len > sz) break;   // frame incomplete - wait for more
-		std::string payload(g_wsRx.data() + off + hl + mk, (size_t)len);   // server frames are unmasked
+		if (off + hl + mk + len > sz) break;   // incomplete - wait for more
+		std::string payload(g_wsRx.data() + off + hl + mk, (size_t)len);   // server frames unmasked
 		off += hl + mk + (size_t)len;
 		if (op == 0x1 || op == 0x0) msgs.push_back(std::move(payload));
 		else if (op == 0x9) pongs.push_back(std::move(payload));   // ping
 		else if (op == 0x8) { gotClose = true; break; }            // close
 	}
-	if (off) g_wsRx.erase(0, off);   // consume parsed bytes before any handler runs
+	if (off) g_wsRx.erase(0, off);   // consume before any handler runs
 	for (auto& p : pongs) { if (!g_wsOpen) break; wsc_send_frame(0xA, p); }
 	if (gotClose) { wsc_close(); return; }
-	for (auto& m : msgs) { if (!g_wsOpen) break; onmsg(m); }   // onmsg may close the socket; stop if so
+	for (auto& m : msgs) { if (!g_wsOpen) break; onmsg(m); }   // onmsg may close the socket
 }
 #endif

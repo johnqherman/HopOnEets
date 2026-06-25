@@ -1,31 +1,24 @@
-// menu.h - the custom in-game menu (Eets::UI). Head-to-head only: no per-run config knobs (build
-// time, hub skip, seed pin and online are fixed/automatic) - the menu is just the match score and the
-// matchmaking controls. "Match lock" stays as the one solo escape hatch to exercise match rules
-// without an opponent. Nothing here persists - there are no tunable settings left to save.
 #pragma once
 #include "state.h"
 #include "net.h"
 
 static void draw_menu() {
-	UI::SetClickSound("GUI Click 1");   // stock sfx on every button/toggle press
-	UI::SetHoverSound("GUI MouseOver"); // stock sfx when the mouse enters a button/toggle
+	UI::SetClickSound("GUI Click 1");
+	UI::SetHoverSound("GUI MouseOver");
 	UI::Begin(40, 60, 360, "HOP ON EETS");
 
-	// ---- online (always on; matchmaking only). Solo rule-test (Ctrl+Shift+H) and local score reset
-	//      (Ctrl+Shift+R) are dev-only keybinds, not menu controls. ----
 	UI::Section("ONLINE");
-	// editable online name (defaults to the vanilla profile name; type to override, blank reverts to it)
 	if (g_nameEntry) {
 		char nl[64]; snprintf(nl, sizeof(nl), "User: %s_", g_nameBuf.c_str()); UI::Label(nl);
 		if (UI::Button("Set name")) { set_player_name(g_nameBuf); g_nameEntry = false; StopTextInput(); }
 	} else {
 		char nm[64];
-		if (g_myElo > 0) snprintf(nm, sizeof(nm), "User: %s (%d)", g_playerId.c_str(), g_myElo);   // name + ranked ELO inline
+		if (g_myElo > 0) snprintf(nm, sizeof(nm), "User: %s (%d)", g_playerId.c_str(), g_myElo);
 		else             snprintf(nm, sizeof(nm), "User: %s", g_playerId.c_str());
 		UI::Label(nm);
 		if (UI::Button("Edit name")) { g_nameEntry = true; g_nameBuf = g_playerId; StartTextInput(); }
 	}
-	if (g_netMsg[0]) UI::Label(g_netMsg);   // status only when there's something to say (host code / matched / offline / error)
+	if (g_netMsg[0]) UI::Label(g_netMsg);
 
 	if (g_matched) {
 		if (!g_confirmForfeit) {
@@ -39,7 +32,7 @@ static void draw_menu() {
 			UI::EndColumns();
 		}
 	} else {
-		g_confirmForfeit = false;   // reset the guard when not in a match
+		g_confirmForfeit = false;
 		UI::BeginColumns(2);
 			if (UI::Button("Host code")) net_action("host");
 			if (UI::Button("Ranked queue")) net_action("queue");
@@ -56,9 +49,7 @@ static void draw_menu() {
 	UI::End();
 }
 
-// ---- input handlers (forwarded from the EetsMod_OnText/OnKey entry points) ----
-// text entry for the two in-menu fields: the online name (printable non-space ASCII, capped) and the
-// join code (uppercased alphanumerics, 6 chars).
+// name: printable non-space ASCII, capped; join code: uppercased alphanumerics, 6 chars
 static void mod_on_text(const char* utf8) {
 	if (!utf8) return;
 	if (g_nameEntry) {
@@ -73,8 +64,7 @@ static void mod_on_text(const char* utf8) {
 		if (((ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9')) && g_codeBuf.size() < 6) g_codeBuf.push_back(ch);
 	}
 }
-// keys: F6 toggles the menu; backspace/enter/esc drive the active text field; CTRL+SHIFT+H/R are dev
-// match-mode / new-match shortcuts.
+// Ctrl+Shift+H/R are dev match-mode toggle / new-match reset
 static void mod_on_key(int key, int mods, int down) {
 	if (!down) return;
 	if (key == EKEY_F6) { g_menuOpen = !g_menuOpen; return; }

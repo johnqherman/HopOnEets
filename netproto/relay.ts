@@ -1,29 +1,22 @@
-// Hop On Eets relay server (v0.2). Zero runtime deps; WebSocket. Pairs two players and relays
-// REAL-TIME position frames between them (plus build/finish), then reports the result. Two ways
-// in: private host/join by code, or ranked matchmaking queue. The relay is authoritative for the
-// series score (it does not simulate - results come from the players' reported finishes).
 import * as http from 'http';
 import type * as net from 'net';
 import * as fs from 'fs';
 import * as ws from './ws';
-import { modLineToMsg, msgToModLine } from './modproto';   // mod text protocol <-> relay JSON (direct-connect clients)
+import { modLineToMsg, msgToModLine } from './modproto';   // mod text protocol <-> relay JSON
 
 export interface Finish { completed: boolean; finish_tick: number; items_used: number; deaths?: number; }
 interface Peer { id: string; name: string; match: string | null; opp: ws.WSConn | null; finish: Finish | null; hostCode: string | null; wins: number; ready: boolean; noContest: boolean; ranked: boolean; roundTimer: ReturnType<typeof setTimeout> | null; forfeited: boolean; }
-// a match held open while a dropped player has a chance to reconnect (keyed by their uuid)
+// match held open for reconnect, keyed by dropped player's uuid
 interface Held { oppConn: ws.WSConn; match: string; dropWins: number; ranked: boolean; timer: ReturnType<typeof setTimeout>; }
-// id = a stable client-generated UUID (the Elo key; names are mutable/spoofable so they must NOT key Elo).
-// name = the display name (the player's profile name), shown to the opponent but never used for identity.
-const BEST_OF = 3, WINS_NEEDED = 2;   // first to 2 round wins takes the series
+// id = stable client UUID (Elo key; names are spoofable so must not key Elo); name = display only
+const BEST_OF = 3, WINS_NEEDED = 2;
 
-// ---- ELO ladder (ranked only). Persisted to a JSON file on the relay host (the VPS); keyed by player
-// name (informal - names aren't authenticated). Standard Elo, K=32, default 1000. ----
+// ---- Elo ladder (ranked only); persisted JSON on relay host. K=32, default 1000 ----
 const ELO_FILE = process.env.ELO_FILE || 'elo.json', ELO_DEFAULT = 1000, ELO_K = 32;
 let eloStore: Record<string, number> = {};
-try { eloStore = JSON.parse(fs.readFileSync(ELO_FILE, 'utf8')); } catch { /* first run: empty */ }
+try { eloStore = JSON.parse(fs.readFileSync(ELO_FILE, 'utf8')); } catch { /* first run, empty */ }
 const getElo = (id: string): number => eloStore[id] ?? ELO_DEFAULT;
 function saveElo(): void { try { fs.writeFileSync(ELO_FILE, JSON.stringify(eloStore, null, 2)); } catch (e) { console.error('[relay] elo save failed:', e); } }
-// apply a ranked series result and persist; returns both players' old/new ratings
 function applyElo(winnerId: string, loserId: string) {
   const wOld = getElo(winnerId), lOld = getElo(loserId);
   const expW = 1 / (1 + Math.pow(10, (lOld - wOld) / 400));
@@ -33,16 +26,15 @@ function applyElo(winnerId: string, loserId: string) {
 }
 export type Verdict = { winner: 'you' | 'opponent' | 'tie'; reason: string };
 
-// tiebreakers: completion, then (completers only) finish_tick, deaths, items_used. If NEITHER
-// player solves the puzzle the round is a draw - a non-solver must never win on finish_tick/items_used, so
-// those tiebreakers only apply when both completed. A draw scores no round win; the relay replays the round
-// (next countdown) until someone solves it.
+// tiebreakers: completion, then (completers only) finish_tick, deaths, items_used. A non-solver
+// must never win on time/items, so those only apply when both completed. Neither solving = draw,
+// which scores no round win and replays the round until someone solves it
 function decideOutcome(a: Finish, b: Finish): { self: Verdict; opp: Verdict } {
   let win: boolean | null; let reason: string;
   if (a.completed !== b.completed) { win = a.completed; reason = 'completion'; }
-  else if (!a.completed) { win = null; reason = 'both_failed'; }   // neither solved -> draw, replay the round
+  else if (!a.completed) { win = null; reason = 'both_failed'; }   // draw, replay round
   else if (a.finish_tick !== b.finish_tick) { win = a.finish_tick < b.finish_tick; reason = 'finish_tick'; }
-  else if ((a.deaths ?? 0) !== (b.deaths ?? 0)) { win = (a.deaths ?? 0) < (b.deaths ?? 0); reason = 'deaths'; }   // tie on time -> fewer deaths wins
+  else if ((a.deaths ?? 0) !== (b.deaths ?? 0)) { win = (a.deaths ?? 0) < (b.deaths ?? 0); reason = 'deaths'; }
   else if (a.items_used !== b.items_used) { win = a.items_used < b.items_used; reason = 'items_used'; }
   else { win = null; reason = 'tie'; }
   const self: Verdict = { winner: win === null ? 'tie' : (win ? 'you' : 'opponent'), reason };
@@ -53,12 +45,12 @@ function decideOutcome(a: Finish, b: Finish): { self: Verdict; opp: Verdict } {
 export function startRelay(port: number, log: (s: string) => void = () => {}): http.Server {
   let queue: ws.WSConn[] = [];
   let nextMatch = 1;
-  const BUILD_SECONDS = 45;    // synced build phase; both clients start their timer on `countdown`
-  const ROUND_CAP_SECONDS = 180;   // total round wall-clock from countdown (build + play + retries); relay-authoritative + broadcast so both clients show an aligned clock. On expiry, unfinished peers are DNF'd.
-  const RECONNECT_SECONDS = 20;    // a dropped (not forfeited) player has this long to reconnect and resume the series
+  const BUILD_SECONDS = 45;        // synced build phase; clients start timer on `countdown`
+  const ROUND_CAP_SECONDS = 180;   // round wall-clock after build; relay-authoritative, DNFs unfinished peers on expiry
+  const RECONNECT_SECONDS = 20;    // dropped (non-forfeit) player has this long to reconnect
   const peers = new Map<ws.WSConn, Peer>();
   const rooms = new Map<string, ws.WSConn>();
-  const held = new Map<string, Held>();   // uuid -> a match held open for reconnect
+  const held = new Map<string, Held>();   // uuid -> held match
 
   function makeCode(): string {
     const al = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous 0/O/1/I
@@ -67,30 +59,29 @@ export function startRelay(port: number, log: (s: string) => void = () => {}): h
     return c;
   }
 
-  const pickLevel = () => Math.floor(Math.random() * 1000);          // both clients resolve `level % poolSize` -> same level
-  const pickSeed  = () => 1 + Math.floor(Math.random() * 0x7ffffffe); // RNG seed valid for both engines' generators
+  const pickLevel = () => Math.floor(Math.random() * 1000);           // clients resolve `level % poolSize` -> same level
+  const pickSeed  = () => 1 + Math.floor(Math.random() * 0x7ffffffe); // RNG seed valid for both engines
 
   function pair(a: ws.WSConn, b: ws.WSConn, ranked: boolean): void {
     const match = 'hoe_' + String(nextMatch++).padStart(6, '0');
     const A = peers.get(a)!, B = peers.get(b)!;
     A.match = match; A.opp = b; A.finish = null; A.wins = 0; A.ready = false; A.noContest = false; A.ranked = ranked;
     B.match = match; B.opp = a; B.finish = null; B.wins = 0; B.ready = false; B.noContest = false; B.ranked = ranked;
-    const level = pickLevel(), seed = pickSeed();   // round 1's level + seed (every round picks fresh - see startRound)
+    const level = pickLevel(), seed = pickSeed();   // round 1; every round picks fresh, see startRound
     const cfg = (selfName: string, oppName: string, selfElo: number, oppElo: number) => ({
       type: 'match_config', match_id: match, mode: 'solution_race',
       ruleset: ranked ? 'ranked_v0' : 'casual', ranked, level, seed,
       tick_rate: 60, self: selfName, opponent: oppName, self_elo: selfElo, opp_elo: oppElo,
     });
     const eA = ranked ? getElo(A.id) : 0, eB = ranked ? getElo(B.id) : 0;
-    a.send(cfg(A.name, B.name, eA, eB));   // display names + current Elo; identity (uuid) stays server-side
+    a.send(cfg(A.name, B.name, eA, eB));   // display names + Elo; uuid stays server-side
     b.send(cfg(B.name, A.name, eB, eA));
-    // countdown is sent once both clients report `ready` (level loaded) - see the ready handler
+    // countdown sent once both report `ready`; see ready handler
     log(`match ${match} (${ranked ? 'ranked' : 'private'}): ${A.name} vs ${B.name} (round 1 level ${level})`);
   }
 
-  // start the next round of an ongoing series: pick a FRESH level + seed (each round is a different level),
-  // reset the ready flags, and tell both clients to load it. The synced countdown then fires from the ready
-  // handler once both have re-loaded. (Round 1 is bootstrapped by pair()/match_config above.)
+  // next round of a series: fresh level + seed, reset ready flags, tell clients to load it; synced
+  // countdown then fires from ready handler once both re-loaded (round 1 bootstrapped by pair())
   function startRound(a: ws.WSConn, b: ws.WSConn, round: number): void {
     const A = peers.get(a), B = peers.get(b); if (!A || !B) return;
     A.ready = false; B.ready = false; A.finish = null; B.finish = null;
@@ -112,7 +103,7 @@ export function startRelay(port: number, log: (s: string) => void = () => {}): h
   function clearRoundTimer(p: Peer | undefined): void {
     if (p && p.roundTimer) { clearTimeout(p.roundTimer); p.roundTimer = null; }
   }
-  // the round's wall-clock ran out: DNF anyone who hasn't finished, then score (relay-authoritative cap).
+  // round wall-clock ran out: DNF anyone unfinished, then score
   function onRoundTimeout(a: ws.WSConn, b: ws.WSConn): void {
     const A = peers.get(a), B = peers.get(b);
     if (!A || !B || A.opp !== b) return;   // match still valid?
@@ -123,49 +114,46 @@ export function startRelay(port: number, log: (s: string) => void = () => {}): h
     maybeResult(a);
   }
 
-  function sendCountdown(a: ws.WSConn, b: ws.WSConn): void {   // synced build phase start (both align to this)
+  function sendCountdown(a: ws.WSConn, b: ws.WSConn): void {
     const A = peers.get(a), B = peers.get(b);
     a.send({ type: 'countdown', seconds: BUILD_SECONDS, cap: ROUND_CAP_SECONDS });
     b.send({ type: 'countdown', seconds: BUILD_SECONDS, cap: ROUND_CAP_SECONDS });
-    // relay-authoritative round clock: both clients align their cap display to this countdown; the relay
-    // backstops it so a stalled/disconnected client can't hang the round.
     clearRoundTimer(A); clearRoundTimer(B);
-    // cap clock runs only AFTER the build phase: fire BUILD + CAP after the countdown signal
+    // relay backstops the cap so a stalled/dropped client can't hang the round (cap counts play only)
     const t = setTimeout(() => onRoundTimeout(a, b), (BUILD_SECONDS + ROUND_CAP_SECONDS) * 1000);
     if (typeof (t as { unref?: () => void }).unref === 'function') (t as { unref: () => void }).unref();
     if (A) A.roundTimer = t;
     if (B) B.roundTimer = t;
   }
 
-  const decide = decideOutcome;   // relay scores each round by the shared tiebreaker rule
+  const decide = decideOutcome;
 
   function maybeResult(conn: ws.WSConn): void {
     const p = peers.get(conn); if (!p || !p.opp) return;
     const q = peers.get(p.opp); if (!q || !p.finish) return;
-    if (p.noContest || q.noContest) {   // desynced match: report the round, score nothing
+    if (p.noContest || q.noContest) {   // desynced match: report round, score nothing
       conn.send({ type: 'no_contest', reason: 'desync' });
       p.opp.send({ type: 'no_contest', reason: 'desync' });
       p.finish = null; q.finish = null;
       log(`no contest ${p.match}: round void (desync)`);
       return;
     }
-    // First to COMPLETE the level wins the round immediately - don't wait for the opponent (a live race).
-    // A failure waits: the opponent may still complete (and win) or also fail (both-failed -> draw).
+    // first to complete wins immediately; a failure waits for the opponent (both fail -> draw)
     let r: { self: Verdict; opp: Verdict };
     if (p.finish.completed) r = { self: { winner: 'you', reason: 'completed' }, opp: { winner: 'opponent', reason: 'completed' } };
     else if (q.finish && q.finish.completed) r = { self: { winner: 'opponent', reason: 'completed' }, opp: { winner: 'you', reason: 'completed' } };
-    else if (q.finish) r = decide(p.finish, q.finish);   // both finished, neither completed -> both_failed (draw)
-    else return;   // we failed but the opponent is still racing -> wait
-    clearRoundTimer(p); clearRoundTimer(q);   // round resolved -> stop the cap clock
+    else if (q.finish) r = decide(p.finish, q.finish);   // both failed -> draw
+    else return;   // we failed, opponent still racing -> wait
+    clearRoundTimer(p); clearRoundTimer(q);
     if (r.self.winner === 'you') p.wins++; else if (r.self.winner === 'opponent') q.wins++;
     conn.send({ type: 'result', ...r.self, you_wins: p.wins, opp_wins: q.wins });
     p.opp.send({ type: 'result', ...r.opp, you_wins: q.wins, opp_wins: p.wins });
-    p.finish = null; q.finish = null;                 // ready for the next round
+    p.finish = null; q.finish = null;
     log(`result ${p.match}: ${r.self.winner} (series ${p.wins}-${q.wins})`);
-    if (p.wins >= WINS_NEEDED || q.wins >= WINS_NEEDED) {   // best-of-3 decided
+    if (p.wins >= WINS_NEEDED || q.wins >= WINS_NEEDED) {   // series decided
       const pWon = p.wins >= WINS_NEEDED;
       let pE = { old: 0, neu: 0 }, qE = { old: 0, neu: 0 };
-      if (p.ranked) {   // ranked: adjust + persist Elo (winner gains, loser loses)
+      if (p.ranked) {
         const r = pWon ? applyElo(p.id, q.id) : applyElo(q.id, p.id);
         pE = pWon ? { old: r.wOld, neu: r.wNew } : { old: r.lOld, neu: r.lNew };
         qE = pWon ? { old: r.lOld, neu: r.lNew } : { old: r.wOld, neu: r.wNew };
@@ -176,9 +164,9 @@ export function startRelay(port: number, log: (s: string) => void = () => {}): h
       log(`series over ${p.match}: ${pWon ? p.name : q.name} (best of ${BEST_OF})`);
       clearRoundTimer(p); clearRoundTimer(q);
       p.wins = 0; q.wins = 0;
-      p.match = null; p.opp = null; q.match = null; q.opp = null;   // series done: free both to re-queue after the win screen
+      p.match = null; p.opp = null; q.match = null; q.opp = null;   // free both to re-queue
     } else {
-      startRound(conn, p.opp, p.wins + q.wins + 1);   // series continues: load a fresh level, ready-gate, then countdown
+      startRound(conn, p.opp, p.wins + q.wins + 1);
     }
   }
 
@@ -193,16 +181,16 @@ export function startRelay(port: number, log: (s: string) => void = () => {}): h
           p.id = String(m.uuid ?? m.player_id ?? 'anon'); p.name = String(m.player_id ?? p.id);
           const h = held.get(p.id);                          // reconnecting into a held match?
           const q = h && peers.get(h.oppConn);
-          if (h && q && q.match === h.match && !q.opp) {      // reattach: swap the live conn back in, resume the series
+          if (h && q && q.match === h.match && !q.opp) {      // reattach: swap live conn back in
             clearTimeout(h.timer); held.delete(p.id);
             p.match = h.match; p.opp = h.oppConn; p.wins = h.dropWins; p.ranked = h.ranked; p.finish = null; p.ready = false;
             q.opp = conn; q.finish = null; q.ready = false;
             conn.send({ type: 'rejoin', match_id: h.match, opponent: q.name, ranked: p.ranked, you_wins: p.wins, opp_wins: q.wins });
             h.oppConn.send({ type: 'opponent_rejoined' });
             log(`reconnect ${h.match}: ${p.name} rejoined (series ${p.wins}-${q.wins})`);
-            startRound(conn, h.oppConn, p.wins + q.wins + 1);   // restart the current round for both
+            startRound(conn, h.oppConn, p.wins + q.wins + 1);   // restart current round for both
           } else {
-            conn.send({ type: 'elo', value: getElo(p.id) });   // current ranked rating (for the F6 menu)
+            conn.send({ type: 'elo', value: getElo(p.id) });
           }
           break;
         }
@@ -222,7 +210,7 @@ export function startRelay(port: number, log: (s: string) => void = () => {}): h
           break;
         }
         case 'queue': if (!queue.includes(conn)) { queue.push(conn); tryMatch(); } break;
-        case 'ready': {   // both clients loaded the level -> start the synced countdown
+        case 'ready': {   // both loaded -> start synced countdown
           const r = peers.get(conn); if (!r || !r.opp) break;
           r.ready = true;
           const o = peers.get(r.opp);
@@ -233,7 +221,7 @@ export function startRelay(port: number, log: (s: string) => void = () => {}): h
         case 'build': relay(conn, { type: 'opp_build', name: m.name, x: m.x, y: m.y }); break;
         case 'buildend': relay(conn, { type: 'opp_buildend' }); break;
         case 'hash':  relay(conn, { type: 'opp_hash', tick: m.tick | 0, hash: String(m.hash ?? ''), platform: String(m.platform ?? '') }); break;
-        case 'desync': {   // a client detected a same-platform divergence -> the whole match is no-contest
+        case 'desync': {   // same-platform divergence -> whole match no-contest
           const q = p.opp ? peers.get(p.opp) : null;
           p.noContest = true; if (q) q.noContest = true;
           const payload = { type: 'no_contest', reason: 'desync', tick: m.tick | 0 };
@@ -241,7 +229,7 @@ export function startRelay(port: number, log: (s: string) => void = () => {}): h
           log(`no contest ${p.match}: desync @${m.tick | 0}`);
           break;
         }
-        case 'forfeit':   // intentional leave: the following disconnect awards the opponent immediately (no reconnect hold)
+        case 'forfeit':   // intentional leave: disconnect awards opponent immediately (no reconnect hold)
           p.forfeited = true;
           break;
         case 'finish':
@@ -251,10 +239,9 @@ export function startRelay(port: number, log: (s: string) => void = () => {}): h
           break;
       }
     };
-    // The native mod connects DIRECTLY over wss speaking its text protocol; browsers/dev tools speak JSON.
-    // Decide per-connection from the first frame: a leading '{' = JSON, else mod-text. For a mod client we
-    // route each text frame through modLineToMsg and override send() to emit mod-text, so all the relay's
-    // internal `conn.send({type:...})` calls work unchanged for both client kinds.
+    // native mod speaks text over wss; browsers speak JSON. Decide from first frame: leading '{' =
+    // JSON, else mod-text. Mod clients route through modLineToMsg and override send() to emit mod-text,
+    // so internal conn.send() calls work unchanged for both
     let decided = false, rawMod = false;
     conn.onText((s: string) => {
       if (!decided) {
@@ -271,7 +258,7 @@ export function startRelay(port: number, log: (s: string) => void = () => {}): h
       if (p.hostCode) rooms.delete(p.hostCode);
       const q = p.opp ? peers.get(p.opp) : undefined;
       if (p.opp && p.match && q && !p.forfeited) {
-        // unexpected DROP: hold the match open so the player can reconnect and resume the series.
+        // unexpected drop: hold match open for reconnect
         clearRoundTimer(q);
         q.opp = null; q.finish = null;
         p.opp.send({ type: 'opponent_dropped', seconds: RECONNECT_SECONDS });
@@ -280,7 +267,7 @@ export function startRelay(port: number, log: (s: string) => void = () => {}): h
           if (held.get(leaverId)?.timer !== timer) return;   // already reattached/handled
           held.delete(leaverId);
           const qq = peers.get(oppConn);
-          if (qq && qq.match === match && !qq.opp) {   // window expired with no reconnect -> award the opponent
+          if (qq && qq.match === match && !qq.opp) {   // window expired, no reconnect -> award opponent
             let qE = { old: 0, neu: 0 };
             if (qq.ranked) { const r = applyElo(qq.id, leaverId); qE = { old: r.wOld, neu: r.wNew }; log(`elo dropout ${match}: ${qq.name} ${qE.old}->${qE.neu}, ${leaverName} ${r.lOld}->${r.lNew}`); }
             oppConn.send({ type: 'series_over', winner: 'you', you_wins: oppWins, opp_wins: dropWins, ranked: qq.ranked, elo_old: qE.old, elo_new: qE.neu, forfeit: true });
@@ -292,10 +279,10 @@ export function startRelay(port: number, log: (s: string) => void = () => {}): h
         peers.delete(conn);
         return;
       }
-      if (p.opp && q) {   // intentional forfeit, or a non-match disconnect (hosting/queue): resolve/cleanup now
+      if (p.opp && q) {   // forfeit or non-match disconnect: resolve/cleanup now
         clearRoundTimer(q);
         p.opp.send({ type: 'opponent_left' });
-        if (p.match) {   // forfeit = a series loss for the leaver (Elo still applies on ranked)
+        if (p.match) {   // forfeit = series loss for leaver (Elo still applies on ranked)
           let qE = { old: 0, neu: 0 };
           if (q.ranked) { const r = applyElo(q.id, p.id); qE = { old: r.wOld, neu: r.wNew }; log(`elo forfeit ${p.match}: ${q.name} ${qE.old}->${qE.neu}, ${p.name} ${r.lOld}->${r.lNew}`); }
           p.opp.send({ type: 'series_over', winner: 'you', you_wins: q.wins, opp_wins: p.wins, ranked: q.ranked, elo_old: qE.old, elo_new: qE.neu, forfeit: true });

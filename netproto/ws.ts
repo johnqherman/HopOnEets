@@ -1,5 +1,3 @@
-// Minimal zero-dependency WebSocket (RFC6455) codec + handshakes for the Hop On Eets relay.
-// Text frames only; handles fragmentation across TCP chunks, masking both directions, close/ping.
 import * as crypto from 'crypto';
 import * as net from 'net';
 import type { IncomingMessage } from 'http';
@@ -50,15 +48,15 @@ export function createParser(onMsg: (s: string) => void, onClose?: () => void): 
 }
 
 export interface WSConn {
-  send(obj: unknown): void;            // JSON frame
-  sendText(s: string): void;           // raw text frame (the mod speaks a newline-free text protocol)
+  send(obj: unknown): void;                // JSON frame
+  sendText(s: string): void;               // raw text frame (mod protocol)
   onJSON(fn: (m: any) => void): void;
-  onText(fn: (s: string) => void): void;   // raw string frames; if set, the JSON path is bypassed
+  onText(fn: (s: string) => void): void;   // raw frames; if set, bypasses JSON path
   onClose(fn: () => void): void;
   close(): void;
 }
 
-// server: handle an http 'upgrade'
+// server: handle http 'upgrade'
 export function accept(req: IncomingMessage, socket: net.Socket): WSConn {
   const k = req.headers['sec-websocket-key'] as string;
   socket.write(
@@ -67,7 +65,7 @@ export function accept(req: IncomingMessage, socket: net.Socket): WSConn {
   return wrap(socket, false);
 }
 
-// client: connect to ws://host:port and call cb(conn) once upgraded
+// client: connect to ws://host:port, cb(conn) once upgraded
 export function connect(
   host: string, port: number, cb: (conn: WSConn | null, err?: Error) => void,
 ): { conn: WSConn | null; socket: net.Socket } {

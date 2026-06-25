@@ -1,10 +1,4 @@
-// Translation between the mod's tiny newline-free text protocol and the relay's JSON messages.
-// The native mod speaks text (no JSON/WS framing burden in C++); the relay (and the dev bridge) use
-// these two pure functions so the mod can connect DIRECTLY over wss without a bridge process.
-//   mod -> relay : modLineToMsg('hello u n')        -> { type:'hello', uuid:'u', player_id:'n' }
-//   relay -> mod : msgToModLine({type:'room',code}) -> 'code <CODE>'
-
-// a mod text line (one per WS frame) -> the relay message object (null = ignore/unknown)
+// mod text line (one per WS frame) -> relay message (null = ignore/unknown)
 export function modLineToMsg(line: string, fallbackName = 'anon'): any | null {
   const t = line.trim(); if (!t) return null;
   const a = t.split(/\s+/);
@@ -25,23 +19,23 @@ export function modLineToMsg(line: string, fallbackName = 'anon'): any | null {
   }
 }
 
-// a relay message object -> the mod text line (null = nothing to send to a text client)
+// relay message -> mod text line (null = nothing to send to a text client)
 export function msgToModLine(m: any): string | null {
   switch (m.type) {
-    case 'match_config':  return `match ${m.match_id} ${m.opponent} ${m.ranked ? 1 : 0} ${m.level ?? -1} ${m.seed ?? 0} ${m.self_elo ?? 0} ${m.opp_elo ?? 0}`;
-    case 'countdown':     return `countdown ${m.seconds} ${m.cap ?? 0}`;
-    case 'round':         return `round ${m.round} ${m.level ?? -1} ${m.seed ?? 0}`;
-    case 'room':          return `code ${m.code}`;
-    case 'join_failed':   return `joinfail ${m.code}`;
-    case 'opp_pos':       return `g ${m.tick} ${m.x} ${m.y} ${m.emo || 'h'} ${m.mot || 'w'} ${m.flip ? 1 : 0}`;
-    case 'opp_build':     return `ob ${m.name} ${m.x} ${m.y}`;
-    case 'opp_buildend':  return 'obend';
-    case 'opp_finish':    return `oppfin ${m.finish_tick} ${m.completed ? 1 : 0} ${m.items_used}`;
-    case 'opp_hash':      return `oh ${m.tick} ${m.hash} ${m.platform}`;
-    case 'no_contest':    return `nocontest ${m.reason} ${m.tick ?? -1}`;
-    case 'result':        return `result ${m.winner} ${m.reason} ${m.you_wins} ${m.opp_wins}`;
-    case 'elo':           return `elo ${m.value ?? 0}`;
-    case 'series_over':   return `series ${m.winner} ${m.you_wins} ${m.opp_wins} ${m.ranked ? 1 : 0} ${m.elo_old ?? 0} ${m.elo_new ?? 0} ${m.forfeit ? 1 : 0}`;
+    case 'match_config':      return `match ${m.match_id} ${m.opponent} ${m.ranked ? 1 : 0} ${m.level ?? -1} ${m.seed ?? 0} ${m.self_elo ?? 0} ${m.opp_elo ?? 0}`;
+    case 'countdown':         return `countdown ${m.seconds} ${m.cap ?? 0}`;
+    case 'round':             return `round ${m.round} ${m.level ?? -1} ${m.seed ?? 0}`;
+    case 'room':              return `code ${m.code}`;
+    case 'join_failed':       return `joinfail ${m.code}`;
+    case 'opp_pos':           return `g ${m.tick} ${m.x} ${m.y} ${m.emo || 'h'} ${m.mot || 'w'} ${m.flip ? 1 : 0}`;
+    case 'opp_build':         return `ob ${m.name} ${m.x} ${m.y}`;
+    case 'opp_buildend':      return 'obend';
+    case 'opp_finish':        return `oppfin ${m.finish_tick} ${m.completed ? 1 : 0} ${m.items_used}`;
+    case 'opp_hash':          return `oh ${m.tick} ${m.hash} ${m.platform}`;
+    case 'no_contest':        return `nocontest ${m.reason} ${m.tick ?? -1}`;
+    case 'result':            return `result ${m.winner} ${m.reason} ${m.you_wins} ${m.opp_wins}`;
+    case 'elo':               return `elo ${m.value ?? 0}`;
+    case 'series_over':       return `series ${m.winner} ${m.you_wins} ${m.opp_wins} ${m.ranked ? 1 : 0} ${m.elo_old ?? 0} ${m.elo_new ?? 0} ${m.forfeit ? 1 : 0}`;
     case 'opponent_left':     return 'oppleft';
     case 'opponent_dropped':  return `oppdrop ${m.seconds ?? 20}`;
     case 'opponent_rejoined': return 'opprejoin';

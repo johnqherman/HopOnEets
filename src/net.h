@@ -1,95 +1,90 @@
-// net.h - realtime net client. The mod connects directly to the relay over WebSocket/TLS
-// (transport in ws_client.h) and speaks the line protocol below. Two ways in: host/join by
-// code, or ranked matchmaking.
 #pragma once
-#include <cmath>        // pow (forfeit Elo prediction)
-#include <random>       // gen_uuid
+#include <cmath>
+#include <random>
 #include "state.h"
-#include "levels.h"     // load_match_level on auto-load
-#include "ws_client.h"  // direct WebSocket (ws/wss) transport to the relay
+#include "levels.h"
+#include "ws_client.h"
 
-// defined further down (platform socket layer + desync), but used by net_handle just below:
 static void net_sendline(const std::string& s);
 [[maybe_unused]] static void note_opp_hash(long tick, uint64_t h, const char* plat);
 [[maybe_unused]] static void note_local_hash(long tick, uint64_t h);
 
-// ---- shared line protocol (platform-independent) ----
+// ---- shared line protocol ----
 static void net_handle(const std::string& ln) {
 	char a[40] = { 0 }, b[40] = { 0 }; long t; float x, y; int rk = 0, iv = 0, lv = -1, cap = 0; unsigned sd = 0; unsigned long long hh = 0;
 	char eC = 0, mC = 0; int fl = 0;
 	int gn = sscanf(ln.c_str(), "g %ld %f %f %c %c %d", &t, &x, &y, &eC, &mC, &fl);
 	if (gn >= 3 && strncmp(ln.c_str(), "g ", 2) == 0) { (void)t; if (valid_pos(x, y)) { g_liveX = x; g_liveY = y; g_liveValid = true; g_liveLastTime = Time(); if (gn >= 6) { g_liveEmotion = eC; g_liveMotion = mC; g_liveFlip = fl != 0; } } }
 	else if (sscanf(ln.c_str(), "oh %ld %llx %39s", &t, &hh, a) == 3) note_opp_hash(t, (uint64_t)hh, a);
-	else if (sscanf(ln.c_str(), "elo %d", &iv) == 1) g_myElo = iv;   // current ranked rating (idle, for the F6 menu)
+	else if (sscanf(ln.c_str(), "elo %d", &iv) == 1) g_myElo = iv;
 	else if (strncmp(ln.c_str(), "nocontest", 9) == 0) {
 		g_noContest = true; long nt = -1; char rs[24] = { 0 }; sscanf(ln.c_str(), "nocontest %23s %ld", rs, &nt);
 		snprintf(g_roundMsg, sizeof(g_roundMsg), "NO CONTEST (%s) @t%ld - not ranked", rs[0] ? rs : "desync", nt);
 	}
 	else if (sscanf(ln.c_str(), "ob %39s %f %f", a, &x, &y) == 3) { if (valid_pos(x, y)) { if (g_oppBuildReady) { g_oppBuild.clear(); g_oppBuildReady = false; } g_oppBuild.push_back({ a, x, y }); } }
 	else if (strncmp(ln.c_str(), "obend", 5) == 0) g_oppBuildReady = true;
+	// match <selfId> <oppId> <ranked> <levelIndex> <seed> <myElo> <oppElo>
 	else if (sscanf(ln.c_str(), "match %39s %39s %d %d %u %d %d", a, b, &rk, &lv, &sd, &g_myElo, &g_oppElo) >= 2) {
 		g_matched = true; g_ranked = rk != 0; g_oppId = b; g_levelIndex = lv; if (sd) g_seed = sd; g_liveValid = false; g_oppBuild.clear(); g_oppBuildReady = false;
-		g_noContest = false; g_desync = false; g_oppHashes.clear(); g_winForfeit = false; g_lastRoundWin = 0; g_oppDropped = false; g_reconnectUntil = 0.0;   // fresh match: clear desync/forfeit/round/drop state
-		g_seriesOver = false; g_seriesMsg[0] = 0;   // clear the previous series banner
+		g_noContest = false; g_desync = false; g_oppHashes.clear(); g_winForfeit = false; g_lastRoundWin = 0; g_oppDropped = false; g_reconnectUntil = 0.0;
+		g_seriesOver = false; g_seriesMsg[0] = 0;
 		snprintf(g_netMsg, sizeof(g_netMsg), "matched vs %s%s", b, g_ranked ? " [ranked]" : "");
-		g_menuOpen = false;   // a match started: close the F6 menu
-		g_pendingShowdown = 1; g_showdownRound = 1;   // match-start VS showdown, shown at the synced countdown
-		if (g_autoLoad) { load_match_level(); net_sendline("ready"); }   // both load the same level, then ready up
-	} else if (sscanf(ln.c_str(), "round %d %d %u", &iv, &lv, &sd) == 3) {
-		// next Bo3 round: a FRESH level (each round is a different level). Load it, then ready up so the relay
-		// fires the synced countdown once both clients have re-loaded.
+		g_menuOpen = false;
+		g_pendingShowdown = 1; g_showdownRound = 1;
+		if (g_autoLoad) { load_match_level(); net_sendline("ready"); }
+	} else if (sscanf(ln.c_str(), "round %d %d %u", &iv, &lv, &sd) == 3) {   // round <n> <levelIndex> <seed>
 		g_levelIndex = lv; if (sd) g_seed = sd; g_liveValid = false; g_oppBuild.clear(); g_oppBuildReady = false;
 		snprintf(g_netMsg, sizeof(g_netMsg), "round %d - loading level", iv);
-		g_pendingShowdown = 2; g_showdownRound = iv;   // lighter between-rounds beat (ROUND N), shown at the countdown
+		g_pendingShowdown = 2; g_showdownRound = iv;
 		if (g_autoLoad) { load_match_level(); net_sendline("ready"); }
-	} else if (sscanf(ln.c_str(), "countdown %d %d", &iv, &cap) >= 1) {
-		if (iv > 0) g_buildSeconds = iv;      // synced build phase: align both clients to the relay signal
-		if (cap > 0) g_roundCapSeconds = cap;   // relay-authoritative round cap (synced clock)
+	} else if (sscanf(ln.c_str(), "countdown %d %d", &iv, &cap) >= 1) {   // countdown <buildSecs> <roundCap>
+		if (iv > 0) g_buildSeconds = iv;
+		if (cap > 0) g_roundCapSeconds = cap;
 		g_buildStart = Time(); g_forcedStart = false;
-		g_roundStart = 0.0;                   // round/cap clock does NOT run during build - it starts at the first Go (begin_sim)
+		g_roundStart = 0.0;                   // cap clock idle during build; starts at first Go (begin_sim)
 		snprintf(g_netMsg, sizeof(g_netMsg), "build %ds (synced)", g_buildSeconds);
-		if (g_pendingShowdown) {              // build is starting (level loaded, draws safe): fire the synced showdown beat
+		if (g_pendingShowdown) {              // level loaded, draws safe: fire showdown beat
 			g_showdownKind = g_pendingShowdown; g_pendingShowdown = 0;
 			g_showdownUntil = Time() + (g_showdownKind == 1 ? SHOWDOWN_SECS_MATCH : SHOWDOWN_SECS_ROUND);
 			PlaySound(g_showdownKind == 1 ? "Fanfare" : "Level Complete");
 		}
 	} else if (sscanf(ln.c_str(), "code %39s", a) == 1) snprintf(g_netMsg, sizeof(g_netMsg), "hosting - code %s", a);
 	else if (sscanf(ln.c_str(), "joinfail %39s", a) == 1) snprintf(g_netMsg, sizeof(g_netMsg), "no game for code %s", a);
+	// result <winner> <reason> <youWins> <ghostWins>  (relay-authoritative score)
 	else if (strncmp(ln.c_str(), "result ", 7) == 0) {
 		char w[16] = { 0 }, r[24] = { 0 }; int yw = 0, ow = 0;
 		sscanf(ln.c_str() + 7, "%15s %23s %d %d", w, r, &yw, &ow);
-		g_youWins = yw; g_ghostWins = ow;       // relay is authoritative for the online series score
-		g_lastRoundWin = (strcmp(w, "you") == 0) ? 1 : (strcmp(w, "opponent") == 0 ? -1 : 0);   // for the next round's card
+		g_youWins = yw; g_ghostWins = ow;
+		g_lastRoundWin = (strcmp(w, "you") == 0) ? 1 : (strcmp(w, "opponent") == 0 ? -1 : 0);
 		Eets::Log("hop_on_eets: result %s by %s  series %d-%d", w, r, yw, ow);
 		snprintf(g_roundMsg, sizeof(g_roundMsg), "ONLINE round: %s by %s  series %d-%d", w, r, yw, ow);
+	// series <winner> <youWins> <ghostWins> <ranked> <eloOld> <eloNew> <forfeit>
 	} else if (strncmp(ln.c_str(), "series ", 7) == 0) {
 		char w[16] = { 0 }; int yw = 0, ow = 0, rk = 0, eo = 0, en = 0, ff = 0;
 		sscanf(ln.c_str() + 7, "%15s %d %d %d %d %d %d", w, &yw, &ow, &rk, &eo, &en, &ff);
 		g_youWins = yw; g_ghostWins = ow;
 		g_interRound = false;
 		g_seriesWon = (strcmp(w, "you") == 0);
-		g_winForfeit = ff != 0;   // opponent forfeited -> "by forfeit" instead of the score
+		g_winForfeit = ff != 0;
 		g_eloRanked = rk != 0; g_eloOld = eo; g_eloNew = en;
-		if (g_eloRanked && en > 0) g_myElo = en;   // update the idle rating shown in the menu
-		g_showdownKind = 0; g_pendingShowdown = 0;   // cancel any pending/playing cinematic
-		g_winShow = true; g_winStart = Time(); g_winUntil = Time() + WINSCREEN_SECS;   // win screen, then auto-return to menu
+		if (g_eloRanked && en > 0) g_myElo = en;
+		g_showdownKind = 0; g_pendingShowdown = 0;
+		g_winShow = true; g_winStart = Time(); g_winUntil = Time() + WINSCREEN_SECS;
 		PlaySound(g_seriesWon ? "Fanfare" : "Error");
-		g_seriesOver = false; g_seriesMsg[0] = 0;   // replaced by the win screen
-	} else if (sscanf(ln.c_str(), "oppdrop %d", &iv) == 1) {   // opponent dropped; relay holds the match for a reconnect window
+		g_seriesOver = false; g_seriesMsg[0] = 0;
+	} else if (sscanf(ln.c_str(), "oppdrop %d", &iv) == 1) {   // relay holds match for reconnect window of iv secs
 		g_oppDropped = true; g_oppDropUntil = Time() + iv; g_liveValid = false;
 		snprintf(g_netMsg, sizeof(g_netMsg), "opponent dropped - waiting %ds", iv);
-	} else if (strncmp(ln.c_str(), "opprejoin", 9) == 0) {   // opponent reconnected
+	} else if (strncmp(ln.c_str(), "opprejoin", 9) == 0) {
 		g_oppDropped = false; snprintf(g_netMsg, sizeof(g_netMsg), "opponent reconnected");
-	} else if (sscanf(ln.c_str(), "rejoin %39s %d %d %d", a, &rk, &iv, &lv) >= 1) {   // WE reconnected into a held match
+	} else if (sscanf(ln.c_str(), "rejoin %39s %d %d %d", a, &rk, &iv, &lv) >= 1) {   // rejoin <oppId> <ranked> <youWins> <ghostWins>
 		g_matched = true; g_ranked = rk != 0; g_oppId = a; g_youWins = iv; g_ghostWins = lv;
 		g_reconnectUntil = 0.0; g_winShow = false; g_oppDropped = false; g_liveValid = false;
 		snprintf(g_netMsg, sizeof(g_netMsg), "reconnected vs %s", a);
-		// the relay sends the round's countdown next -> the round restarts from build
 	} else if (strncmp(ln.c_str(), "oppleft", 7) == 0) { g_matched = false; g_liveValid = false; g_interRound = false; g_oppDropped = false; snprintf(g_netMsg, sizeof(g_netMsg), "opponent left"); }
 }
 
-// ---- transport: a direct WebSocket to the relay (ws:// or wss://); framing/TLS live in ws_client.h.
-// Each line is one WS text frame (no newline). net_handle is the per-frame callback. ----
+// ---- transport: one line = one WS text frame (no newline) ----
 static void net_sendline(const std::string& s) { wsc_send_text(s); }
 static void net_close() { wsc_close(); g_matched = false; g_liveValid = false; }
 static bool net_up() { return wsc_up(); }
@@ -100,17 +95,11 @@ static bool net_connect() {
 	return true;
 }
 
-// adopt the player's active vanilla Eets profile name as the online identity (falls back to the
-// configured id when no profile is selected yet - e.g. at startup before the player picks one). Re-sends
-// hello when already connected so the relay learns the real name before a match is made. (Win: profile
-// read is a no-op for now, so the configured id stands.)
-// the wire protocol is whitespace-tokenized (sscanf %Ns on both ends), so the identity must be a single
-// safe token: collapse whitespace runs to '_', keep printable ASCII, cap to MAX_PLAYER_NAME (the vanilla
-// name field's own limit, well within the %39s buffers).
+// wire protocol is whitespace-tokenized (sscanf %Ns), so identity must be a single token
 static std::string net_safe_id(const std::string& s) {
 	std::string out; bool gap = false;
 	for (char c : s) {
-		if ((unsigned char)c <= ' ') { gap = !out.empty(); continue; }   // whitespace/control -> a single gap
+		if ((unsigned char)c <= ' ') { gap = !out.empty(); continue; }   // whitespace/control -> gap
 		if ((unsigned char)c >= 0x7f) continue;                          // drop non-ASCII
 		if (gap) { out += '_'; gap = false; }
 		out += c;
@@ -119,15 +108,14 @@ static std::string net_safe_id(const std::string& s) {
 	return out;
 }
 static void refresh_player_id() {
-	if (g_nameManual) return;   // a custom name was set in the F6 menu - don't override it with the profile
+	if (g_nameManual) return;
 	std::string nm = net_safe_id(Profile_GetName());
 	if (nm.empty() || nm == g_playerId) return;
 	g_playerId = nm;
 	if (net_up()) net_sendline("hello " + g_playerUuid + " " + g_playerId);
 }
 
-// set the online name from the F6 menu. Empty input clears the override -> revert to the vanilla profile
-// name. A custom name is sanitized, persisted (save key player_id), and re-hello'd if already connected.
+// F6 name override; empty -> revert to profile; persisted under save key player_id
 static void set_player_name(const std::string& raw) {
 	std::string nm = net_safe_id(raw);
 	if (nm.empty()) { g_nameManual = false; SaveSet(MOD, "player_id", ""); refresh_player_id(); return; }
@@ -135,17 +123,15 @@ static void set_player_name(const std::string& raw) {
 	if (net_up()) net_sendline("hello " + g_playerUuid + " " + g_playerId);
 }
 
-// leave the current match: dropping the connection is a forfeit (the relay awards the remaining player the
-// series on disconnect), then reconnect as a fresh idle client so the player can queue again.
+// leave match: "forfeit" line marks the drop intentional -> immediate award (opponent takes series
+// +ranked elo), no reconnect hold
 static void forfeit_match() {
-	net_sendline("forfeit");             // tell the relay this is intentional -> immediate award, no reconnect hold
-	g_reconnectUntil = 0.0;              // don't auto-reconnect after an intentional leave
-	net_close();                         // disconnect = loss; the relay awards the opponent the series (+ranked elo)
-	// show a DEFEAT result screen (by forfeit), then auto-return to the menu - same flow as a normal loss.
-	// We've disconnected, so we have no elo for ourselves; just show the forfeit.
+	net_sendline("forfeit");
+	g_reconnectUntil = 0.0;
+	net_close();
 	g_seriesWon = false; g_winForfeit = true;
-	if (g_ranked && g_myElo > 0 && g_oppElo > 0) {   // predict the rating hit (the relay is authoritative; same Elo formula)
-		double expOpp = 1.0 / (1.0 + pow(10.0, (g_myElo - g_oppElo) / 400.0));   // opponent's expected score (they win the forfeit)
+	if (g_ranked && g_myElo > 0 && g_oppElo > 0) {   // predict rating hit (relay authoritative; same Elo formula)
+		double expOpp = 1.0 / (1.0 + pow(10.0, (g_myElo - g_oppElo) / 400.0));   // opp's expected score (they win forfeit)
 		g_eloRanked = true; g_eloOld = g_myElo; g_eloNew = (int)(g_myElo - 32.0 * (1.0 - expOpp) + 0.5);
 	} else g_eloRanked = false;
 	g_winShow = true; g_winStart = Time(); g_winUntil = Time() + WINSCREEN_SECS;
@@ -154,38 +140,35 @@ static void forfeit_match() {
 	snprintf(g_netMsg, sizeof(g_netMsg), "forfeited");
 }
 
-// mid-match drop recovery: if the socket dropped while we're still in a match, keep retrying to reconnect
-// (the relay holds the match ~20s, then `rejoin` reattaches us and restarts the round). If we can't get
-// back in before the window passes, give up to the main menu.
+// mid-match drop recovery: retry reconnect; relay holds match ~20s then `rejoin` reattaches; window
+// passes with no rejoin -> give up to main menu
 static void net_reconnect_tick() {
 	if (!g_matched || g_winShow) return;
-	if (net_up() && g_reconnectUntil == 0.0) return;   // normal connected state - nothing to do
+	if (net_up() && g_reconnectUntil == 0.0) return;   // normal connected state
 	double now = Time();
-	if (g_reconnectUntil == 0.0) g_reconnectUntil = now + 25.0;   // just dropped: open the give-up window (relay's 20s + margin)
-	if (now > g_reconnectUntil) {   // window passed with no rejoin -> the match is gone
+	if (g_reconnectUntil == 0.0) g_reconnectUntil = now + 25.0;   // give-up window: relay's 20s + margin
+	if (now > g_reconnectUntil) {
 		g_matched = false; g_reconnectUntil = 0.0; g_oppDropped = false; g_interRound = false; g_phase = IDLE; g_menuOpen = false;
 		snprintf(g_netMsg, sizeof(g_netMsg), "disconnected");
 		World_StartMainMenu();
 		return;
 	}
-	if (!net_up() && now - g_lastReconnectTry >= 1.0) {   // retry the socket until the relay reattaches us
+	if (!net_up() && now - g_lastReconnectTry >= 1.0) {
 		g_lastReconnectTry = now;
 		snprintf(g_netMsg, sizeof(g_netMsg), "reconnecting...");
-		net_connect();   // hello -> relay reattaches if the match is still held (-> rejoin + round)
+		net_connect();
 	}
 }
 
-// connect on demand, then send a command line to the bridge
 static void net_action(const std::string& cmd) {
-	refresh_player_id();   // use the freshest profile name for host/queue/join (and re-hello if it changed)
+	refresh_player_id();   // re-hello if profile name changed
 	if (!net_up()) { if (!net_connect()) { snprintf(g_netMsg, sizeof(g_netMsg), "can't reach server (%s)", g_relayUrl.c_str()); return; } }
 	net_sendline(cmd);
 }
 
-// ---- checkpoint state-hash exchange (same-platform desync detection) -----------------------
-// Same-platform divergence at the same tick = a real desync (cheat / nondeterminism); cross-platform
-// hashes legitimately differ (FP physics) so we never compare across platforms. On a same-platform
-// mismatch: flag it, withhold the ranked result, report to the relay (-> no-contest), save a diag.
+// ---- checkpoint state-hash exchange (same-platform desync detection) ----
+// cross-platform hashes legitimately differ (FP physics) so are never compared across platforms;
+// same-platform mismatch = real desync -> flag, withhold ranked result, report to relay, save diag
 static void write_desync_diag(long tick, uint64_t local, uint64_t opp) {
 	char path[128]; snprintf(path, sizeof(path), "Log/hop_on_eets_desync_%03d.json", g_roundCounter);
 	FILE* f = fopen(path, "w"); if (!f) return;
@@ -204,24 +187,21 @@ static void flag_desync(long tick, uint64_t local, uint64_t opp) {
 	if (!g_desyncSent) { g_desyncSent = true; char b[48]; snprintf(b, sizeof(b), "desync %ld", tick); net_sendline(b); }
 	snprintf(g_netMsg, sizeof(g_netMsg), "DESYNC @t%ld - result withheld", tick);
 }
-// our checkpoint at `tick` just computed: compare if the opponent's already arrived
 [[maybe_unused]] static void note_local_hash(long tick, uint64_t h) {
 	if (g_noContest || g_desync) return;
 	auto it = g_oppHashes.find(tick);
 	if (it != g_oppHashes.end() && it->second != h) flag_desync(tick, h, it->second);
 }
-// opponent's checkpoint arrived: stash it (same-platform only) and compare to ours if we have it
-// (only net_handle calls this, which is the POSIX build; unused in the Windows stub build)
+// only net_handle (POSIX) calls this; unused in Win stub build
 [[maybe_unused]] static void note_opp_hash(long tick, uint64_t h, const char* plat) {
 	if (g_noContest || g_desync) return;
-	if (!plat || strcmp(plat, PLATFORM) != 0) return;   // cross-platform divergence is expected, not a desync
+	if (!plat || strcmp(plat, PLATFORM) != 0) return;   // cross-platform divergence expected, not desync
 	g_oppHashes[tick] = h;
 	for (auto& s : g_samples) if (s.tick == tick) { if (s.hash != h) flag_desync(tick, s.hash, h); break; }
 }
 
-// a stable 128-bit hex id, generated once per install and persisted. This - not the (editable, spoofable)
-// display name - is the ranked Elo identity. Mixes random_device with time + a stack address so a weak
-// random_device (seen on some mingw builds) still yields a distinct id per install.
+// stable 128-bit hex id (not the spoofable display name) is the ranked Elo identity; mixes time +
+// stack address so a weak random_device (some mingw builds) still yields a distinct id per install
 static std::string gen_uuid() {
 	std::random_device rd;
 	uint64_t a = ((uint64_t)rd() << 32) ^ rd(), b = ((uint64_t)rd() << 32) ^ rd();
@@ -230,22 +210,21 @@ static std::string gen_uuid() {
 	return std::string(buf);
 }
 
-// mod bootstrap (called from EetsMod_Init): read the hidden dev/deployment knobs (absent from the shipped
-// .cfg, so not shown in-game - a dev can still set them in the save file), establish the Elo identity, adopt
-// the vanilla profile name, and connect to the relay.
+// mod bootstrap (from EetsMod_Init): read hidden dev knobs, establish Elo identity, adopt profile
+// name, connect to relay
 static void mod_init() {
 	auto cfgI = [](const char* k, int d) { return SaveGetInt(MOD, k, ConfigGetInt(MOD, k, d)); };
 	auto cfgS = [](const char* k, const char* d) { const char* v = SaveGet(MOD, k, ConfigGet(MOD, k, d)); return std::string(v ? v : d); };
-	g_online       = true;                       // always-on multiplayer
-	g_playerUuid   = cfgS("player_uuid", "");    // stable Elo identity; generated once per install, then persisted
+	g_online       = true;
+	g_playerUuid   = cfgS("player_uuid", "");
 	if (g_playerUuid.empty()) { g_playerUuid = gen_uuid(); SaveSet(MOD, "player_uuid", g_playerUuid.c_str()); }
-	g_pinSeed      = cfgI("pin_seed", 0) != 0;   // solo determinism self-test (Phase C); matches always pin via g_matched
-	g_relayUrl     = cfgS("relay_url", "wss://hoe.raccoonlagoon.com");   // direct relay endpoint (ws:// local, wss:// prod)
-	const char* savedName = SaveGet(MOD, "player_id", nullptr);   // a custom name set via the F6 menu (persisted)
+	g_pinSeed      = cfgI("pin_seed", 0) != 0;
+	g_relayUrl     = cfgS("relay_url", "wss://hoe.raccoonlagoon.com");
+	const char* savedName = SaveGet(MOD, "player_id", nullptr);
 	g_nameManual   = (savedName && *savedName);
-	g_playerId     = g_nameManual ? net_safe_id(savedName) : std::string("p1");   // else "p1" until the profile name is adopted below
-	refresh_player_id();   // adopt the vanilla profile name if one is already active at load
-	if (g_online && net_connect()) g_netMsg[0] = 0;   // connected: clear the default "offline" (identity shows as "User: <name>")
+	g_playerId     = g_nameManual ? net_safe_id(savedName) : std::string("p1");
+	refresh_player_id();
+	if (g_online && net_connect()) g_netMsg[0] = 0;   // connected: clear default "offline"
 	Eets::Log("hop_on_eets: ready (tick=%d build=%ds online=%d) - F6 opens the match menu",
 	          TICK_RATE, g_buildSeconds, g_online ? 1 : 0);
 }

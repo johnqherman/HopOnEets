@@ -1,13 +1,5 @@
-// Hop On Eets bridge (v0.2). Sits between the native mod and the relay:
-//   mod  <-- localhost TCP, newline text -->  bridge  <-- WebSocket JSON -->  relay
-// Keeps the 32-bit native plugin tiny (no WS/TLS): it speaks a few text lines over a local socket,
-// while the real-time leg to the server is a WebSocket.
-//
-// mod -> bridge: "hello <id>" | "host" | "join <code>" | "queue" | "pos <tick> <x> <y>" |
-//                "finish <tick> <0|1> <items>"
-// bridge -> mod: "code <CODE>" | "joinfail <CODE>" | "match <id> <opp> <ranked0|1>" |
-//                "g <tick> <x> <y>" | "oppfin <tick> <0|1> <items>" | "result <winner> <reason>" |
-//                "oppleft"
+// dev shim (used by e2e): bridges a native mod over localhost TCP (newline text) <-> relay (WS JSON).
+// in prod the mod connects to the relay directly over wss (see ws_client.h)
 import * as net from 'net';
 import * as ws from './ws';
 
@@ -29,7 +21,7 @@ export function startBridge(opts: BridgeOpts): { tcp: net.Server; close(): void 
   let mod: net.Socket | null = null;
   let relay: ws.WSConn | null = null;
   let modBuf = '';
-  let pending: string[] = [];   // mod lines queued until the relay WS is up
+  let pending: string[] = [];   // mod lines queued until relay WS is up
 
   const toMod = (line: string) => { if (mod && !mod.destroyed) mod.write(line + '\n'); };
 
@@ -45,7 +37,7 @@ export function startBridge(opts: BridgeOpts): { tcp: net.Server; close(): void 
       case 'ready':  relay.send({ type: 'ready' }); break;
       case 'build':  relay.send({ type: 'build', name: a[1], x: +a[2], y: +a[3] }); break;
       case 'buildend': relay.send({ type: 'buildend' }); break;
-      case 'pos':    relay.send({ type: 'pos', tick: +a[1], x: +a[2], y: +a[3], emo: a[4] || 'h', mot: a[5] || 'w', flip: a[6] ? +a[6] : 0 }); break;   // a[4..6] = opponent anim state
+      case 'pos':    relay.send({ type: 'pos', tick: +a[1], x: +a[2], y: +a[3], emo: a[4] || 'h', mot: a[5] || 'w', flip: a[6] ? +a[6] : 0 }); break;   // a[4..6] = anim state
       case 'hash':   relay.send({ type: 'hash', tick: +a[1], hash: a[2], platform: a[3] }); break;
       case 'desync': relay.send({ type: 'desync', tick: +a[1] }); break;
       case 'finish': relay.send({ type: 'finish', finish_tick: +a[1], completed: a[2] === '1', items_used: +a[3], deaths: a[4] ? +a[4] : 0 }); break;
@@ -95,7 +87,7 @@ export function startBridge(opts: BridgeOpts): { tcp: net.Server; close(): void 
       let i: number;
       while ((i = modBuf.indexOf('\n')) >= 0) { handleModLine(modBuf.slice(0, i)); modBuf = modBuf.slice(i + 1); }
     });
-    sock.on('close', () => { log('mod disconnected'); mod = null; if (relay) { relay.close(); relay = null; } });  // mod quit -> leave the match
+    sock.on('close', () => { log('mod disconnected'); mod = null; if (relay) { relay.close(); relay = null; } });  // mod quit -> leave match
     sock.on('error', () => {});
   });
   tcp.listen(modPort, '127.0.0.1', () => log(`bridge tcp on 127.0.0.1:${modPort} -> relay ${relayHost}:${relayPort}`));

@@ -1,7 +1,5 @@
-// End-to-end test of the real-time path for BOTH connect modes:
 //   fake mod (TCP) <-> bridge <-> WS <-> relay <-> WS <-> bridge <-> fake mod (TCP)
 //   1) host/join by code (private)   2) ranked matchmaking queue
-// Proves: code host/join, queue pairing, REAL-TIME position relay, finish -> provisional result.
 import * as net from 'net';
 import { startRelay } from './relay';
 import { startBridge } from './bridge';
@@ -67,7 +65,7 @@ function fakeMod(port: number): Mod {
   if (ma && parseInt(ma.split(' ')[5], 10) > 0) ok('match carries per-match seed: ' + ma.split(' ')[5]);
   else if (ma) fail('match missing seed: ' + ma);
 
-  // ready-gate: countdown only after BOTH report ready (level loaded)
+  // ready-gate: countdown only after both ready
   A.send('ready');
   await sleep(400);
   if (A.seen((l) => l.startsWith('countdown '))) fail('countdown fired before both ready');
@@ -78,7 +76,7 @@ function fakeMod(port: number): Mod {
   if (cdA && cdB && cdA.startsWith('countdown 45') && cdB.startsWith('countdown 45')) ok('synced countdown both: ' + cdA);
   else if (cdA) fail('countdown wrong: ' + cdA + ' / ' + cdB);
 
-  // build exchange: A's locked-in build reaches B as ghost items
+  // build exchange: A's build reaches B as ghost items
   A.send('build marshmallow 100 200'); A.send('buildend');
   const ob = await B.expect((l) => l.startsWith('ob '), 'B sees A build');
   if (ob === 'ob marshmallow 100 200') ok('build relay A->B: ' + ob); else if (ob) fail('build wrong: ' + ob);
@@ -90,17 +88,16 @@ function fakeMod(port: number): Mod {
   B.send('pos 20 300 60');
   const g2 = await A.expect((l) => l.startsWith('g '), 'A sees B pos');
   if (g2 === 'g 20 300 60 h w 0') ok('realtime B->A: ' + g2); else if (g2) fail('B->A wrong: ' + g2);
-  // anim state (emotion/motion/facing) rides along so the ghost mirrors the opponent's Eets
+  // anim state (emotion/motion/facing) rides along
   A.send('pos 12 130 50 a j 1');
   const ga = await B.expect((l) => l.startsWith('g 12 '), 'B sees A anim state');
   if (ga === 'g 12 130 50 a j 1') ok('opponent anim state relayed: ' + ga); else if (ga) fail('anim state wrong: ' + ga);
 
-  // best-of-3: first to COMPLETE the level wins the round immediately (live race - no waiting for both)
-  A.send('finish 100 1 5');   // A completes -> wins round 1
+  // best-of-3: first to complete wins the round immediately (live race)
+  A.send('finish 100 1 5');
   const r1 = await A.expect((l) => l.startsWith('result '), 'A round-1 result');
   if (r1 === 'result you completed 1 0') ok('round 1 -> A (series 1-0): ' + r1);
   else if (r1) fail('round-1 result wrong: ' + r1);
-  // round 2: A completes again -> best-of-3 decided
   A.send('finish 90 1 5');
   const so = await A.expect((l) => l.startsWith('series '), 'A series_over');
   if (so === 'series you 2 0 0 0 0 0') ok('best-of-3 -> A (2-0, private/no-elo): ' + so); else if (so) fail('series wrong: ' + so);
@@ -123,7 +120,7 @@ function fakeMod(port: number): Mod {
   const oh = await D.expect((l) => l.startsWith('oh '), 'D sees C checkpoint hash');
   if (oh === 'oh 60 aaaaaaaaaaaaaaaa linux64') ok('checkpoint hash relay C->D: ' + oh);
   else if (oh) fail('hash relay wrong: ' + oh);
-  // D's local hash differs -> D reports the desync; the relay voids the match for BOTH
+  // hash mismatch -> D reports desync, relay voids for both
   D.send('desync 60');
   const ncC = await C.expect((l) => l.startsWith('nocontest '), 'C no-contest', 2000);
   const ncD = await D.expect((l) => l.startsWith('nocontest '), 'D no-contest', 2000);
@@ -136,12 +133,12 @@ function fakeMod(port: number): Mod {
   const jf = await C.expect((l) => l.startsWith('joinfail '), 'bad join rejected', 1500);
   if (jf) ok('bad code rejected: ' + jf);
 
-  // ---- mid-match DROP -> reconnect window -> rejoin (not an instant loss) ----
-  D.close();   // a network drop (no 'forfeit' sent): the relay holds the match
+  // ---- mid-match drop -> reconnect window -> rejoin (not an instant loss) ----
+  D.close();   // network drop (no forfeit): relay holds the match
   const od = await C.expect((l) => l.startsWith('oppdrop'), 'C sees opponent dropped', 2000);
   if (od && od.startsWith('oppdrop ')) ok('drop -> reconnect hold (not a loss): ' + od);
   else if (od) fail('oppdrop wrong: ' + od);
-  // D reconnects within the window (same uuid 'dave'): the bridge auto-sends hello on relay reconnect -> reattach
+  // D reconnects same uuid -> reattach (bridge auto-sends hello on reconnect)
   await sleep(200);
   const D2 = fakeMod(38694);
   const rj = await D2.expect((l) => l.startsWith('rejoin '), 'D rejoins the held match', 3000);

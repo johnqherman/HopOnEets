@@ -1,41 +1,37 @@
-// recorder.h - the build/sim lifecycle: record the player's build placements (for the live build-share to the
-// opponent) and run the determinism self-test. No replay/ghost/result files - the ghost is the LIVE opponent
-// only (see ghostview.h) and there is no local recording or playback.
+// recorder.h - build-placement capture (for live build-share) + determinism self-test
+// not currently working but kept for future reference; see match.h
 #pragma once
 #include "state.h"
-#include "net.h"          // net_sendline: broadcast our build + finish
-#include "determinism.h"  // engage_determinism on sim start
+#include "net.h"
+#include "determinism.h"
 
-// ---- build/sim lifecycle ----
 static void begin_build() {
 	g_phase = BUILD; g_tick = 0; g_finishTick = -1; g_resets = 0; g_interRound = false;
-	g_deaths = 0; g_deathTicks = 0; g_deathReset = false; g_retryActive = false; g_roundStart = 0.0;   // fresh round: clear death tally/banked time/retry+round clocks
+	g_deaths = 0; g_deathTicks = 0; g_deathReset = false; g_retryActive = false; g_roundStart = 0.0;
 	g_placements.clear(); g_samples.clear(); g_prevWasResetRerun = false;
 	g_buildStart = Time(); g_forcedStart = false;
 	g_oppBuild.clear(); g_oppBuildReady = false;
 	snprintf(g_status, sizeof(g_status), "build");
 }
 static void begin_sim(bool fromReset) {
-	g_phase = SIM; g_tick = 0; g_finishTick = -1; g_retryActive = false;   // sim started: retry clock no longer applies
-	g_engineTickBase = Engine_GetSimTick();   // baseline the true engine sim-tick; subsequent g_tick = counter - this
-	g_lastHashBucket = -1;                     // restart hash-sample bucketing for this run
-	if (g_matched && g_roundStart == 0.0) g_roundStart = Time();   // round/cap clock starts at the FIRST Go (after build), per round
+	g_phase = SIM; g_tick = 0; g_finishTick = -1; g_retryActive = false;
+	g_engineTickBase = Engine_GetSimTick();   // g_tick = counter - this baseline
+	g_lastHashBucket = -1;
+	if (g_matched && g_roundStart == 0.0) g_roundStart = Time();   // round clock starts at first Go
 	std::vector<uint64_t> seq; seq.reserve(g_samples.size());
 	for (auto& s : g_samples) seq.push_back(s.hash);
 	g_prevHashSeq = seq; g_samples.clear(); g_prevWasResetRerun = fromReset;
-	g_oppHashes.clear(); g_desync = false; g_desyncSent = false; g_desyncTick = -1;   // fresh round: reset desync detection
+	g_oppHashes.clear(); g_desync = false; g_desyncSent = false; g_desyncTick = -1;
 	ForEachObject([&](Object* o) {
 		if (!o) return;
 		unsigned long long id = Object_GetID(o);
 		for (auto& p : g_placements) if (p.id == id) { Vector2 q = Object_GetPosition(o); p.x = q.x; p.y = q.y; p.matched = true; }
 	});
-	// drop placements with no live object: a build reset gives the re-placed items NEW ids, so entries from
-	// prior reset attempts never match here and would otherwise ship as junk (0,0) items. Keep only the final
-	// build = what's actually live at sim start.
+	// drop placements with no live object: a build reset re-ids re-placed items, so stale entries would ship as junk (0,0)
 	g_placements.erase(std::remove_if(g_placements.begin(), g_placements.end(),
 	                                   [](const Placement& p) { return !p.matched; }),
 	                   g_placements.end());
-	if (g_matched) {   // share our locked-in build so the opponent can see it as ghost items
+	if (g_matched) {   // share locked-in build for opponent's ghost items
 		for (auto& p : g_placements) if (!p.removed && valid_pos(p.x, p.y)) { char bb[96]; snprintf(bb, sizeof(bb), "build %s %.1f %.1f", p.blueprint.c_str(), p.x, p.y); net_sendline(bb); }
 		net_sendline("buildend");
 	}

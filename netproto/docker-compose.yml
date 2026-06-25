@@ -1,12 +1,3 @@
-# Production relay for Hop On Eets. The host reverse proxy (nginx) terminates TLS for the public domain
-# and forwards the WebSocket upgrade to this relay, which stays plain ws bound to loopback on the host.
-# TLS is intentionally NOT bundled here: the VPS already runs a shared nginx that fronts every service,
-# so this compose only publishes the relay on 127.0.0.1:${APP_PORT}; the nginx vhost proxies to it.
-#
-#   1. Point a DNS A record (your domain) at this VPS.
-#   2. Copy .env.example -> .env and set APP_PORT (the loopback host port nginx proxies to).
-#   3. docker compose up -d --build
-#   Clients connect to wss://<domain>/ through the host nginx vhost.
 services:
   relay:
     build: .
@@ -15,9 +6,9 @@ services:
       - PORT=38500
       - ELO_FILE=/data/elo.json
     volumes:
-      - elo:/data            # Elo ladder persists here across restarts/redeploys - never wipe
+      - elo:/data
     ports:
-      - "127.0.0.1:${APP_PORT:?set APP_PORT in .env}:38500"   # loopback only; host nginx proxies here
+      - "127.0.0.1:${APP_PORT:?set APP_PORT in .env}:38500"
 
 volumes:
   elo:
