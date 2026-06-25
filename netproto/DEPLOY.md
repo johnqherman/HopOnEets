@@ -43,9 +43,9 @@ secrets: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` (private key), `SSH_PASSPHRASE`. 
 
 ## Operating
 
-- Logs:        `docker compose logs -f relay`
-- Update:      `./netproto/deploy.sh`  (or `git pull && docker compose up -d --build`)
-- Elo ladder:  persisted in the `elo` volume at `/data/elo.json`
+- Logs: `docker compose logs -f relay`
+- Update: `./netproto/deploy.sh` (or `git pull && docker compose up -d --build`)
+- Elo ladder: persisted in the `elo` volume at `/data/elo.json`
   (inspect: `docker compose exec relay cat /data/elo.json`). Redeploys never wipe it; never run
   `docker compose down -v`.
 - The Elo key is the client UUID, not the display name (names are spoofable). Identity is still
