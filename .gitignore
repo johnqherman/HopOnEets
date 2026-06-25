@@ -1,16 +1,10 @@
 # build artifacts
-*.o
 *.so
 *.dll
 *.eetsmod
 build/
-.cache/
 node_modules/
 dist/
 # relay runtime / deploy secrets
 netproto/elo.json
 netproto/.env
-# editor / OS
-.vscode/
-*.swp
-.DS_Store
