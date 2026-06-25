@@ -55,3 +55,46 @@ static void draw_menu() {
 	UI::Label("F6 closes this menu");
 	UI::End();
 }
+
+// ---- input handlers (forwarded from the EetsMod_OnText/OnKey entry points) ----
+// text entry for the two in-menu fields: the online name (printable non-space ASCII, capped) and the
+// join code (uppercased alphanumerics, 6 chars).
+static void mod_on_text(const char* utf8) {
+	if (!utf8) return;
+	if (g_nameEntry) {
+		for (const char* p = utf8; *p; ++p)
+			if ((unsigned char)*p > ' ' && (unsigned char)*p < 0x7f && (int)g_nameBuf.size() < MAX_PLAYER_NAME) g_nameBuf.push_back(*p);
+		return;
+	}
+	if (!g_codeEntry) return;
+	for (const char* p = utf8; *p; ++p) {
+		char ch = *p;
+		if (ch >= 'a' && ch <= 'z') ch = (char)(ch - 'a' + 'A');
+		if (((ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9')) && g_codeBuf.size() < 6) g_codeBuf.push_back(ch);
+	}
+}
+// keys: F6 toggles the menu; backspace/enter/esc drive the active text field; CTRL+SHIFT+H/R are dev
+// match-mode / new-match shortcuts.
+static void mod_on_key(int key, int mods, int down) {
+	if (!down) return;
+	if (key == EKEY_F6) { g_menuOpen = !g_menuOpen; return; }
+	if (g_nameEntry) {
+		if (key == EKEY_BACKSPACE) { if (!g_nameBuf.empty()) g_nameBuf.pop_back(); return; }
+		if (key == EKEY_RETURN)    { set_player_name(g_nameBuf); g_nameEntry = false; StopTextInput(); return; }
+		if (key == EKEY_ESCAPE)    { g_nameEntry = false; StopTextInput(); return; }
+	}
+	if (g_codeEntry) {
+		if (key == EKEY_BACKSPACE) { if (!g_codeBuf.empty()) g_codeBuf.pop_back(); return; }
+		if (key == EKEY_RETURN)    { g_codeEntry = false; StopTextInput(); if (!g_codeBuf.empty()) net_action("join " + g_codeBuf); return; }
+		if (key == EKEY_ESCAPE)    { g_codeEntry = false; g_codeBuf.clear(); StopTextInput(); return; }
+	}
+	bool cs = (mods & EKMOD_CTRL) && (mods & EKMOD_SHIFT);
+	if (cs && (key == 'h' || key == 'H')) {
+		g_matchActive = !g_matchActive;
+		Eets::Log("hop_on_eets: match mode %s", g_matchActive ? "ON" : "OFF");
+		if (g_matchActive && g_phase == SIM) engage_determinism();
+	} else if (cs && (key == 'r' || key == 'R')) {
+		g_youWins = g_ghostWins = 0; g_roundCounter = 0; g_roundMsg[0] = 0; g_seriesOver = false; g_seriesMsg[0] = 0;
+		Eets::Log("hop_on_eets: new match");
+	}
+}

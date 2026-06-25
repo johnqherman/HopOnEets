@@ -3,6 +3,7 @@
 // code, or ranked matchmaking.
 #pragma once
 #include <cmath>        // pow (forfeit Elo prediction)
+#include <random>       // gen_uuid
 #include "state.h"
 #include "levels.h"     // load_match_level on auto-load
 #include "ws_client.h"  // direct WebSocket (ws/wss) transport to the relay
@@ -216,4 +217,35 @@ static void flag_desync(long tick, uint64_t local, uint64_t opp) {
 	if (!plat || strcmp(plat, PLATFORM) != 0) return;   // cross-platform divergence is expected, not a desync
 	g_oppHashes[tick] = h;
 	for (auto& s : g_samples) if (s.tick == tick) { if (s.hash != h) flag_desync(tick, s.hash, h); break; }
+}
+
+// a stable 128-bit hex id, generated once per install and persisted. This - not the (editable, spoofable)
+// display name - is the ranked Elo identity. Mixes random_device with time + a stack address so a weak
+// random_device (seen on some mingw builds) still yields a distinct id per install.
+static std::string gen_uuid() {
+	std::random_device rd;
+	uint64_t a = ((uint64_t)rd() << 32) ^ rd(), b = ((uint64_t)rd() << 32) ^ rd();
+	a ^= (uint64_t)(Time() * 1e6); b ^= (uint64_t)(uintptr_t)&a;
+	char buf[40]; snprintf(buf, sizeof(buf), "%016llx%016llx", (unsigned long long)a, (unsigned long long)b);
+	return std::string(buf);
+}
+
+// mod bootstrap (called from EetsMod_Init): read the hidden dev/deployment knobs (absent from the shipped
+// .cfg, so not shown in-game - a dev can still set them in the save file), establish the Elo identity, adopt
+// the vanilla profile name, and connect to the relay.
+static void mod_init() {
+	auto cfgI = [](const char* k, int d) { return SaveGetInt(MOD, k, ConfigGetInt(MOD, k, d)); };
+	auto cfgS = [](const char* k, const char* d) { const char* v = SaveGet(MOD, k, ConfigGet(MOD, k, d)); return std::string(v ? v : d); };
+	g_online       = true;                       // always-on multiplayer
+	g_playerUuid   = cfgS("player_uuid", "");    // stable Elo identity; generated once per install, then persisted
+	if (g_playerUuid.empty()) { g_playerUuid = gen_uuid(); SaveSet(MOD, "player_uuid", g_playerUuid.c_str()); }
+	g_pinSeed      = cfgI("pin_seed", 0) != 0;   // solo determinism self-test (Phase C); matches always pin via g_matched
+	g_relayUrl     = cfgS("relay_url", "wss://hoe.raccoonlagoon.com");   // direct relay endpoint (ws:// local, wss:// prod)
+	const char* savedName = SaveGet(MOD, "player_id", nullptr);   // a custom name set via the F6 menu (persisted)
+	g_nameManual   = (savedName && *savedName);
+	g_playerId     = g_nameManual ? net_safe_id(savedName) : std::string("p1");   // else "p1" until the profile name is adopted below
+	refresh_player_id();   // adopt the vanilla profile name if one is already active at load
+	if (g_online && net_connect()) g_netMsg[0] = 0;   // connected: clear the default "offline" (identity shows as "User: <name>")
+	Eets::Log("hop_on_eets: ready (tick=%d build=%ds online=%d) - F6 opens the match menu",
+	          TICK_RATE, g_buildSeconds, g_online ? 1 : 0);
 }
