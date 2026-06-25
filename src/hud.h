@@ -28,7 +28,7 @@ static void draw_showdown() {
     DrawAnimFrozenFit(g_ghostAnim.c_str(), lcx, eetsY, th, white, false);
     DrawAnimFrozenFit(g_ghostAnim.c_str(), rcx, eetsY, th, white,
                       true); // mirrored
-    DrawTextOutlined(sw / 2 - 26, cy - 24, "VS", FONT_HUGE, yellow);
+    DrawTextCenteredOutlined(sw / 2, cy - 24, "VS", FONT_HUGE, yellow);
     int nameY = eetsY - th / 2 - 26;
     char ln[48], rn[48];
     if (g_ranked && g_myRating > 0)
@@ -39,10 +39,8 @@ static void draw_showdown() {
       snprintf(rn, sizeof(rn), "%s (%d)", g_oppId.c_str(), g_oppRating);
     else
       snprintf(rn, sizeof(rn), "%s", g_oppId.c_str());
-    DrawTextOutlined(lcx - (int)strlen(ln) * 8, nameY, ln, FONT_BIG,
-                     Color(150, 220, 255, 255));
-    DrawTextOutlined(rcx - (int)strlen(rn) * 8, nameY, rn, FONT_BIG,
-                     Color(255, 160, 120, 255));
+    DrawTextCenteredOutlined(lcx, nameY, ln, FONT_BIG, Color(150, 220, 255, 255));
+    DrawTextCenteredOutlined(rcx, nameY, rn, FONT_BIG, Color(255, 160, 120, 255));
   } else { // between rounds
     if (g_lastRoundWin != 0) {
       int prev = g_showdownRound -
@@ -52,15 +50,14 @@ static void draw_showdown() {
         snprintf(wl, sizeof(wl), "You won round %d", prev);
       else
         snprintf(wl, sizeof(wl), "%s won round %d", g_oppId.c_str(), prev);
-      DrawTextOutlined(sw / 2 - (int)strlen(wl) * 8, cy - 74, wl, FONT_BIG,
-                       g_lastRoundWin > 0 ? green : red);
+      DrawTextCenteredOutlined(sw / 2, cy - 74, wl, FONT_BIG,
+                               g_lastRoundWin > 0 ? green : red);
     } else if (g_lastRoundTie) { // both DNF: same round number, fresh map -> mulligan
-      DrawTextOutlined(sw / 2 - 4 * 8, cy - 74, "MULLIGAN", FONT_BIG, yellow);
+      DrawTextCenteredOutlined(sw / 2, cy - 74, "MULLIGAN", FONT_BIG, yellow);
     }
     char rt[32];
     snprintf(rt, sizeof(rt), "ROUND %d", g_showdownRound);
-    DrawTextOutlined(sw / 2 - (int)strlen(rt) * 12, cy - 24, rt, FONT_HUGE,
-                     yellow);
+    DrawTextCenteredOutlined(sw / 2, cy - 24, rt, FONT_HUGE, yellow);
   }
 }
 
@@ -72,16 +69,15 @@ static void draw_winscreen() {
   Color green(120, 255, 120, 255), red(255, 90, 80, 255),
       white(245, 245, 255, 255), grey(180, 180, 200, 255);
   const char *title = g_seriesWon ? "VICTORY" : "DEFEAT";
-  DrawTextOutlined(sw / 2 - (int)strlen(title) * 14, cy - 120, title, FONT_HUGE,
-                   g_seriesWon ? green : red);
+  DrawTextCenteredOutlined(sw / 2, cy - 120, title, FONT_HUGE,
+                           g_seriesWon ? green : red);
   const char *sub = g_winForfeit ? "by forfeit" : nullptr;
   char sc[32];
   if (!sub) {
     snprintf(sc, sizeof(sc), "%d - %d", g_youWins, g_ghostWins);
     sub = sc;
   }
-  DrawTextOutlined(sw / 2 - (int)strlen(sub) * 8, cy - 56, sub, FONT_BIG,
-                   white);
+  DrawTextCenteredOutlined(sw / 2, cy - 56, sub, FONT_BIG, white);
   if (g_ratingRanked) {
     double a = (Time() - g_winStart - 0.6) / 1.8;
     if (a < 0)
@@ -92,16 +88,16 @@ static void draw_winscreen() {
     int shown = (int)(v + 0.5);
     char el[48];
     snprintf(el, sizeof(el), "RATING %d", shown);
-    DrawTextOutlined(sw / 2 - (int)strlen(el) * 8, cy + 6, el, FONT_BIG,
-                     Color(255, 232, 40, 255));
+    DrawTextCenteredOutlined(sw / 2, cy + 6, el, FONT_BIG,
+                             Color(255, 232, 40, 255));
     int d = g_ratingNew - g_ratingOld;
     char dl[24];
     snprintf(dl, sizeof(dl), "%+d", d);
-    DrawTextOutlined(sw / 2 - (int)strlen(dl) * 8, cy + 46, dl, FONT_BIG,
-                     d >= 0 ? green : red);
+    DrawTextCenteredOutlined(sw / 2, cy + 46, dl, FONT_BIG,
+                             d >= 0 ? green : red);
   }
-  DrawTextOutlined(sw / 2 - 120, sh - 56, "returning to menu...", FONT_NORMAL,
-                   grey);
+  DrawTextCenteredOutlined(sw / 2, sh - 56, "returning to menu...", FONT_NORMAL,
+                           grey);
 }
 
 static void draw_hud() {
@@ -120,9 +116,8 @@ static void draw_hud() {
         left = 0;
       snprintf(b, sizeof(b), "DISCONNECTED. AUTO-WIN IN: %.1f", left);
     }
-    DrawTextOutlined(ScreenWidth() / 2 - (int)strlen(b) * 8,
-                     ScreenHeight() / 2 - 100, b, FONT_BIG,
-                     Color(255, 200, 80, 255));
+    DrawTextCenteredOutlined(ScreenWidth() / 2, ScreenHeight() / 2 - 100, b,
+                             FONT_BIG, Color(255, 200, 80, 255));
   }
   if (in_level()) {
     bool inMatch = (g_matched || g_matchActive);
