@@ -81,7 +81,7 @@ static void draw_ghost(float dt) {
       sy = (int)gy; // identity world->screen (single-screen levels)
   // foot-anchor: draw the sprite bottom-centre at (sx, footY) so varying-height sprites stay grounded
   // (no float on emotion swap / sink); footY tuned so the feet sit on the ground (was a fixed -32 centre).
-  int footY = sy + 28;
+  int footY = sy + 44;
   Color tint(255, 255, 255, GHOST_ALPHA);
   bool drew = false;
   // cycle the anim locally (frame -1). frame-sync via g_liveFrame is disabled: the streamed engine frame
