@@ -54,6 +54,8 @@ static void draw_showdown() {
         snprintf(wl, sizeof(wl), "%s won round %d", g_oppId.c_str(), prev);
       DrawTextOutlined(sw / 2 - (int)strlen(wl) * 8, cy - 74, wl, FONT_BIG,
                        g_lastRoundWin > 0 ? green : red);
+    } else if (g_lastRoundTie) { // both DNF: same round number, fresh map -> mulligan
+      DrawTextOutlined(sw / 2 - 4 * 8, cy - 74, "MULLIGAN", FONT_BIG, yellow);
     }
     char rt[32];
     snprintf(rt, sizeof(rt), "ROUND %d", g_showdownRound);
