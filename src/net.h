@@ -68,11 +68,13 @@ static void net_handle(const std::string &ln) {
     g_oppBuildReady = true;
   // match <selfId> <oppId> <ranked> <levelIndex> <seed> <myRating> <oppRating>
   else if (sscanf(ln.c_str(), "match %39s %39s %d %d %u %d %d", a, b, &rk, &lv,
-                  &sd, &g_myRating, &g_oppRating) >= 2) {
+                  &sd, &iv, &g_oppRating) >= 2) {
     g_matched = true;
     g_queueing = false;   // matched -> leave the searching state
     g_hostCode[0] = 0;    // matched -> the host code is spent
     g_ranked = rk != 0;
+    if (g_ranked && iv > 0)
+      g_myRating = iv;   // ranked match refreshes the ladder rating; casual/private send 0, don't clobber it
     g_oppId = b;
     g_levelIndex = lv;
     if (sd)
