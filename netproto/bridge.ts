@@ -53,7 +53,7 @@ export function startBridge(opts: BridgeOpts): {
         relay.send({ type: "join", code: a[1] || "" });
         break;
       case "queue":
-        relay.send({ type: "queue" });
+        relay.send({ type: "queue", ranked: a[1] !== "casual" });
         break;
       case "ready":
         relay.send({ type: "ready" });

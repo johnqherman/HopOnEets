@@ -171,7 +171,8 @@ export function startRelay(
   port: number,
   log: (s: string) => void = () => {},
 ): http.Server {
-  let queue: ws.WSConn[] = [];
+  let rankedQueue: ws.WSConn[] = [];
+  let casualQueue: ws.WSConn[] = [];
   let nextMatch = 1;
   const BUILD_SECONDS = 45; // synced build phase; clients start timer on `countdown`
   const ROUND_CAP_SECONDS = 180; // round wall-clock after build; relay-authoritative, DNFs unfinished peers on expiry
@@ -265,12 +266,8 @@ export function startRelay(
     log(`round ${round} ${A.match}: level ${level}`);
   }
 
-  function tryMatch(): void {
-    while (queue.length >= 2) {
-      const a = queue.shift()!,
-        b = queue.shift()!;
-      pair(a, b, true);
-    }
+  function tryMatch(q: ws.WSConn[], ranked: boolean): void {
+    while (q.length >= 2) pair(q.shift()!, q.shift()!, ranked);
   }
 
   function relay(conn: ws.WSConn, msg: unknown): void {
@@ -505,12 +502,16 @@ export function startRelay(
           pair(host, conn, false);
           break;
         }
-        case "queue":
-          if (!queue.includes(conn)) {
-            queue.push(conn);
-            tryMatch();
-          }
+        case "queue": {
+          const ranked = m.ranked !== false; // default ranked
+          // drop from both pools first: dedupes, and lets a re-queue switch modes
+          rankedQueue = rankedQueue.filter((c) => c !== conn);
+          casualQueue = casualQueue.filter((c) => c !== conn);
+          const q = ranked ? rankedQueue : casualQueue;
+          q.push(conn);
+          tryMatch(q, ranked);
           break;
+        }
         case "ready": {
           // both loaded -> start synced countdown
           const r = peers.get(conn);
@@ -654,7 +655,8 @@ export function startRelay(
       const p = peers.get(conn);
       if (!p) return;
       clearRoundTimer(p);
-      queue = queue.filter((c) => c !== conn);
+      rankedQueue = rankedQueue.filter((c) => c !== conn);
+      casualQueue = casualQueue.filter((c) => c !== conn);
       if (p.hostCode) rooms.delete(p.hostCode);
       const q = p.opp ? peers.get(p.opp) : undefined;
       if (p.opp && p.match && q) {

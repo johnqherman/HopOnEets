@@ -73,13 +73,17 @@ function fakeMod(port: number): Mod {
   mk(38694, "dave");
   mk(38695, "erin");
   mk(38696, "finn");
+  mk(38697, "grace");
+  mk(38698, "heath");
   await sleep(250);
   const A = fakeMod(38691),
     B = fakeMod(38692),
     C = fakeMod(38693),
     D = fakeMod(38694),
     E = fakeMod(38695),
-    F = fakeMod(38696);
+    F = fakeMod(38696),
+    G = fakeMod(38697),
+    H = fakeMod(38698);
   await sleep(120);
 
   // ---- 1) private host/join by code ----
@@ -180,6 +184,24 @@ function fakeMod(port: number): Mod {
   const g3 = await D.expect((l) => l.startsWith("g "), "D sees C pos");
   if (g3 === "g 5 7 9 h w 0 0 - -1") ok("realtime C->D: " + g3);
   else if (g3) fail("C->D wrong: " + g3);
+
+  // ---- 2b) casual queue: separate pool from ranked, ranked=0 ----
+  G.send("hello grace");
+  H.send("hello heath");
+  // cross-pool isolation: a casual seeker and a ranked seeker must NOT match
+  G.send("queue casual");
+  H.send("queue ranked");
+  await sleep(400);
+  if (G.seen((l) => l.startsWith("match ")) || H.seen((l) => l.startsWith("match ")))
+    fail("casual and ranked seekers cross-matched");
+  else ok("casual and ranked pools isolated");
+  // same pool now matches them; H re-queues casual
+  H.send("queue casual");
+  const mg = await G.expect((l) => l.startsWith("match "), "G match (casual)");
+  const mh = await H.expect((l) => l.startsWith("match "), "H match (casual)");
+  if (mg && mh) ok("casual match: " + mg);
+  if (mg && mg.split(" ")[3] !== "0")
+    fail("casual match should be ranked=0: " + mg);
 
   // ---- checkpoint hash relay + desync = no-contest ----
   C.send("hash 60 aaaaaaaaaaaaaaaa linux64");
