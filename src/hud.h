@@ -101,6 +101,7 @@ static void draw_winscreen() {
 }
 
 static void draw_hud() {
+  UI::NewFrame();   // once per frame, before any widget
   if (g_winShow && Time() < g_winUntil) {
     draw_winscreen();
     return;
@@ -188,6 +189,14 @@ static void draw_hud() {
     }
   }
 
-  if (g_menuOpen && !g_interRound)
-    draw_menu();
+  if (!g_interRound) {
+    if (g_menuOpen) {
+      draw_menu();
+    } else if (World_IsInMainMenu()) {   // pill only once the main menu is up (not boot/loading or in a level)
+      UI::SetClickSound("GUI Click 1");
+      UI::SetHoverSound("GUI MouseOver");
+      if (UI::TabButton(42, 150, "HOP ON EETS"))   // under + left-aligned with the eets title/tagline
+        g_menuOpen = true;
+    }
+  }
 }

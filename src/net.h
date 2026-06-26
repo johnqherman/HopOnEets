@@ -70,6 +70,8 @@ static void net_handle(const std::string &ln) {
   else if (sscanf(ln.c_str(), "match %39s %39s %d %d %u %d %d", a, b, &rk, &lv,
                   &sd, &g_myRating, &g_oppRating) >= 2) {
     g_matched = true;
+    g_queueing = false;   // matched -> leave the searching state
+    g_hostCode[0] = 0;    // matched -> the host code is spent
     g_ranked = rk != 0;
     g_oppId = b;
     g_levelIndex = lv;
@@ -130,10 +132,12 @@ static void net_handle(const std::string &ln) {
                                                       : SHOWDOWN_SECS_ROUND);
       PlaySound(g_showdownKind == 1 ? "Fanfare" : "Level Complete");
     }
-  } else if (sscanf(ln.c_str(), "code %39s", a) == 1)
+  } else if (sscanf(ln.c_str(), "code %39s", a) == 1) {
+    snprintf(g_hostCode, sizeof(g_hostCode), "%s", a);
     snprintf(g_netMsg, sizeof(g_netMsg), "hosting - code %s", a);
+  }
   else if (sscanf(ln.c_str(), "joinfail %39s", a) == 1)
-    snprintf(g_netMsg, sizeof(g_netMsg), "no game for code %s", a);
+    snprintf(g_netMsg, sizeof(g_netMsg), "no game: %s", a);
   // result <winner> <reason> <youWins> <ghostWins>  (relay-authoritative score)
   else if (strncmp(ln.c_str(), "result ", 7) == 0) {
     char w[16] = {0}, r[24] = {0};
