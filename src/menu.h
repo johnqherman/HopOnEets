@@ -5,9 +5,17 @@
 static void draw_menu() {
   UI::SetClickSound("GUI Click 1");
   UI::SetHoverSound("GUI MouseOver");
-  UI::Begin(40, 60, 360, "HOP ON EETS");
+  UI::Begin(42, 150, 360, "HOP ON EETS");   // top-left aligned with the pill
+  if (UI::CloseButton())
+    g_menuOpen = false;
 
-  UI::Section("ONLINE");
+  if (net_up()) {
+    UI::SectionStatus("CONNECTED", Color(70, 220, 90, 255));
+  } else {
+    UI::SectionStatus("DISCONNECTED", Color(235, 70, 55, 255));
+    if (UI::Button("Retry connection"))
+      net_connect();
+  }
   if (g_nameEntry) {
     char nl[64];
     snprintf(nl, sizeof(nl), "User: %s_", g_nameBuf.c_str());
@@ -30,8 +38,6 @@ static void draw_menu() {
       StartTextInput();
     }
   }
-  if (g_netMsg[0])
-    UI::Label(g_netMsg);
 
   if (g_matched) {
     if (!g_confirmForfeit) {
@@ -49,13 +55,44 @@ static void draw_menu() {
         g_confirmForfeit = false;
       UI::EndColumns();
     }
+  } else if (g_queueing) {
+    char sb[48];
+    int secs = (int)(Time() - g_queueStart);
+    snprintf(sb, sizeof(sb), "Searching for a match...  %d:%02d", secs / 60, secs % 60);
+    UI::Label(sb);
+    UI::State &st = UI::S();
+    st.cy += 58;   // room above the Cancel button for the eets
+    int th = 56, brd = 6, btnY = st.cy;
+    bool cancel = UI::Button("Cancel search");   // its top black border sits at btnY
+    // a little eets marches the full panel width (cut at the panel sides), feet on the button's top border
+    static int ew = 0;   // fixed once (per-frame AnimFitWidth varies with the walk cycle)
+    if (ew <= 8) { ew = AnimFitWidth(g_ghostAnim.c_str(), th); if (ew < 8) ew = th * 4 / 5; }
+    int lo = st.px - ew, hi = st.px + st.pw + ew, range = (hi > lo) ? hi - lo : 1;   // off-left -> off-right -> wrap
+    static double mpos = 0.0;
+    mpos += DeltaTime() * 80.0; while (mpos >= range) mpos -= range;
+    int ex = lo + (int)mpos;
+    ClipRect(st.px + brd, btnY - th, st.pw - 2 * brd, th + 6);   // panel-width clip
+    DrawAnimFit(g_ghostAnim.c_str(), ex, btnY - th / 2 + 2, th, (float)DeltaTime());
+    ClipReset();
+    if (cancel) {   // no server dequeue cmd; reconnect drops us from the relay queue
+      g_queueing = false;
+      net_close();
+      net_connect();
+    }
   } else {
     g_confirmForfeit = false;
     UI::BeginColumns(2);
-    if (UI::Button("Host code"))
+    if (g_hostCode[0]) {   // hosting -> the Host button becomes Copy code
+      if (UI::Button("Copy code"))
+        SetClipboard(g_hostCode);
+    } else if (UI::Button("Host code"))
       net_action("host");
-    if (UI::Button("Ranked queue"))
+    if (UI::Button("Ranked queue")) {
       net_action("queue");
+      g_queueing = true;
+      g_queueStart = Time();
+      g_netMsg[0] = 0;   // clear stale host/join status on entering the queue
+    }
     UI::NextColumn();
     if (g_codeEntry) {
       char ce[40];
@@ -75,8 +112,9 @@ static void draw_menu() {
     UI::EndColumns();
   }
 
-  UI::Separator();
-  UI::Label("F6 closes this menu");
+  if (g_netMsg[0] && !g_queueing)
+    UI::Label(g_netMsg);   // host/join status; hidden while queueing
+
   UI::End();
 }
 
@@ -107,10 +145,6 @@ static void mod_on_text(const char *utf8) {
 static void mod_on_key(int key, int mods, int down) {
   if (!down)
     return;
-  if (key == EKEY_F6) {
-    g_menuOpen = !g_menuOpen;
-    return;
-  }
   if (g_nameEntry) {
     if (key == EKEY_BACKSPACE) {
       if (!g_nameBuf.empty())

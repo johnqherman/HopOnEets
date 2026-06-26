@@ -87,10 +87,13 @@ static std::string g_playerId =
 static std::string g_playerUuid; // stable client-generated rating identity;
                                  // persisted, never changes
 static bool g_matched = false, g_ranked = false;
+static bool g_queueing = false;       // in the ranked queue: set on Queue click, cleared on match/cancel
+static double g_queueStart = 0.0;     // Time() when queueing began (for the elapsed-time display)
 static std::string g_oppId = "?";
 static int g_levelIndex =
     -1; // ranked level index from relay (resolved % pool size)
 static char g_netMsg[96] = "offline";
+static char g_hostCode[40] = "";   // active host code (set on the relay "code" reply, cleared on match)
 static bool g_liveValid = false;
 static float g_liveX = 0, g_liveY = 0;
 static double g_liveLastTime =
