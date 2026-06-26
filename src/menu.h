@@ -2,6 +2,14 @@
 #include "state.h"
 #include "net.h"
 
+static void start_queue(bool ranked) {
+  net_action(ranked ? "queue ranked" : "queue casual");
+  g_queueRanked = ranked;
+  g_queueing = true;
+  g_queueStart = Time();
+  g_netMsg[0] = 0;   // clear stale host/join status on entering the queue
+}
+
 static void draw_menu() {
   UI::SetClickSound("GUI Click 1");
   UI::SetHoverSound("GUI MouseOver");
@@ -58,7 +66,8 @@ static void draw_menu() {
   } else if (g_queueing) {
     char sb[48];
     int secs = (int)(Time() - g_queueStart);
-    snprintf(sb, sizeof(sb), "Searching for a match...  %d:%02d", secs / 60, secs % 60);
+    snprintf(sb, sizeof(sb), "Finding a %s match...  %d:%02d",
+             g_queueRanked ? "ranked" : "casual", secs / 60, secs % 60);
     UI::Label(sb);
     UI::State &st = UI::S();
     st.cy += 58;   // room above the Cancel button for the eets
@@ -87,12 +96,6 @@ static void draw_menu() {
         SetClipboard(g_hostCode);
     } else if (UI::Button("Host code"))
       net_action("host");
-    if (UI::Button("Ranked queue")) {
-      net_action("queue");
-      g_queueing = true;
-      g_queueStart = Time();
-      g_netMsg[0] = 0;   // clear stale host/join status on entering the queue
-    }
     UI::NextColumn();
     if (g_codeEntry) {
       char ce[40];
@@ -109,6 +112,14 @@ static void draw_menu() {
       g_codeBuf.clear();
       StartTextInput();
     }
+    UI::EndColumns();
+
+    UI::BeginColumns(2);   // public matchmaking: Ranked | Casual
+    if (UI::Button("Ranked"))
+      start_queue(true);
+    UI::NextColumn();
+    if (UI::Button("Casual"))
+      start_queue(false);
     UI::EndColumns();
   }
 

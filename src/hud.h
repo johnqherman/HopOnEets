@@ -189,10 +189,16 @@ static void draw_hud() {
     }
   }
 
+  // main menu, or the in-level pause screen. pause halts the sim (IsSimulating false) while a loading
+  // screen keeps it live (true), so !IsSimulating distinguishes the pause screen from loading.
+  bool menu_surface = World_IsInMainMenu() || (World_IsPaused() && !World_IsSimulating());
   if (!g_interRound) {
     if (g_menuOpen) {
-      draw_menu();
-    } else if (World_IsInMainMenu()) {   // pill only once the main menu is up (not boot/loading or in a level)
+      if (menu_surface)
+        draw_menu();
+      else
+        g_menuOpen = false;   // resuming the level (or a load screen) dismisses the menu
+    } else if (menu_surface) {
       UI::SetClickSound("GUI Click 1");
       UI::SetHoverSound("GUI MouseOver");
       if (UI::TabButton(42, 150, "HOP ON EETS"))   // under + left-aligned with the eets title/tagline

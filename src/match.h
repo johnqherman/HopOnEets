@@ -109,6 +109,7 @@ static void end_series_to_menu() {
   g_interRound = false;
   g_seriesOver = false;
   g_roundMsg[0] = 0;
+  g_netMsg[0] = 0;   // clear transient status ("forfeiting...") so it doesn't stick on the menu
   g_levelIndex = -1;
   g_liveValid = false;
   g_oppBuild.clear();
