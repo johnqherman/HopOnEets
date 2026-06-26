@@ -15,7 +15,7 @@ export function modLineToMsg(line: string, fallbackName = "anon"): any | null {
     case "join":
       return { type: "join", code: a[1] || "" };
     case "queue":
-      return { type: "queue" };
+      return { type: "queue", ranked: a[1] !== "casual" }; // bare `queue` = ranked
     case "ready":
       return { type: "ready" };
     case "build":
