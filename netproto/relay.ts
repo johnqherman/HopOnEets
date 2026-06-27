@@ -724,6 +724,15 @@ export function startRelay(
       peers.delete(conn);
     });
   });
+  // keepalive: idle queued sockets otherwise die at the proxy read timeout (~min) and the player silently
+  // drops from the queue. ping every connection well under that; peers auto-pong, and a dead pipe throws
+  // on write -> the socket's close fires -> dequeue. Matched players send frames constantly so are never idle.
+  const HEARTBEAT_MS = 25000;
+  const heartbeat = setInterval(() => {
+    for (const conn of peers.keys()) conn.ping();
+  }, HEARTBEAT_MS);
+  heartbeat.unref?.(); // don't keep the process alive on its own
+  server.on("close", () => clearInterval(heartbeat));
   server.listen(port, () => log(`relay listening on ws://0.0.0.0:${port}`));
   return server;
 }
