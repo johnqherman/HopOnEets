@@ -40,6 +40,7 @@ extern "C" void EetsMod_OnKey(int key, int mods, int down) {
 extern "C" void EetsMod_Update() {
   net_poll();
   net_reconnect_tick(); // relay holds the match ~20s across a mid-match drop
+  net_queue_tick();     // re-assert/reconnect while waiting so long queuers don't silently fall out
   match_update();
   draw_hud();
 }

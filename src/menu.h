@@ -7,6 +7,7 @@ static void start_queue(bool ranked) {
   g_queueRanked = ranked;
   g_queueing = true;
   g_queueStart = Time();
+  g_lastQueueAssert = Time();   // just asserted; next re-assert is one interval out
   g_netMsg[0] = 0;   // clear stale host/join status on entering the queue
 }
 
@@ -100,8 +101,7 @@ static void draw_menu() {
     if (g_codeEntry) {
       char ce[40];
       snprintf(ce, sizeof(ce), "Code: %s_", g_codeBuf.c_str());
-      UI::Label(ce);
-      if (UI::Button("Connect")) {
+      if (UI::Button(ce)) {   // the button is the input; click (or Enter) connects
         g_codeEntry = false;
         StopTextInput();
         if (!g_codeBuf.empty())
