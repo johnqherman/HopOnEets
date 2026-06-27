@@ -87,6 +87,7 @@ export function createParser(
 export interface WSConn {
   send(obj: unknown): void; // JSON frame
   sendText(s: string): void; // raw text frame (mod protocol)
+  ping(): void; // WS ping frame (keepalive; peer auto-pongs)
   onJSON(fn: (m: any) => void): void;
   onText(fn: (s: string) => void): void; // raw frames; if set, bypasses JSON path
   onClose(fn: () => void): void;
@@ -191,6 +192,13 @@ function wrap(socket: net.Socket, mask: boolean): WSConn {
     sendText: (s: string) => {
       try {
         socket.write(encodeFrame(s, mask));
+      } catch {
+        /* closed */
+      }
+    },
+    ping: () => {
+      try {
+        socket.write(Buffer.from([0x89, 0x00])); // FIN + ping opcode, no payload (server frames unmasked)
       } catch {
         /* closed */
       }
