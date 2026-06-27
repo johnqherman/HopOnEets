@@ -74,7 +74,33 @@ static void draw_ghost(float dt) {
     return;
   if (!(g_matched && g_liveValid && (Time() - g_liveLastTime) < 0.4))
     return; // freshness gate
-  float gx = g_liveX, gy = g_liveY;
+  // latency compensation: predict the opponent forward by the frame's age (g_tick - g_liveTick) ticks
+  // at their measured velocity. lag is recomputed every frame so it tracks latency changes in real time.
+  long lag = g_tick - g_liveTick;
+  if (lag < 0) lag = 0;
+  long lagX = lag > GHOST_EXTRAP_CAP_TICKS ? GHOST_EXTRAP_CAP_TICKS : lag;
+  long lagY = lag > GHOST_EXTRAP_CAP_TICKS_Y ? GHOST_EXTRAP_CAP_TICKS_Y : lag;
+  float tx = g_liveX + g_liveVX * (float)lagX;
+  float ty = g_liveY + g_liveVY * (float)lagY;
+  // slew-limit (not exponential ease): exponential easing trails a moving target by ~v/k, adding a constant
+  // lag. instead sit EXACTLY on the prediction during normal motion (zero added lag) and only spread out a
+  // big correction over a few frames. step scales with frame time so it's framerate-independent.
+  float dx = tx - g_ghostRX, dy = ty - g_ghostRY;
+  float d2 = dx * dx + dy * dy;
+  float step = GHOST_MAX_STEP * dt * TICK_RATE; // px this frame (1x at 60fps)
+  if (!g_ghostRInit || d2 > GHOST_SNAP_DIST * GHOST_SNAP_DIST) {
+    g_ghostRX = tx; // first sample / teleport / respawn -> snap, no cross-screen slide
+    g_ghostRY = ty;
+    g_ghostRInit = true;
+  } else if (d2 <= step * step) {
+    g_ghostRX = tx; // within one step -> land exactly on the prediction (no trailing lag)
+    g_ghostRY = ty;
+  } else {
+    float d = sqrtf(d2); // big correction -> approach at capped speed, spread over frames
+    g_ghostRX += dx / d * step;
+    g_ghostRY += dy / d * step;
+  }
+  float gx = g_ghostRX, gy = g_ghostRY;
   if (!valid_pos(gx, gy))
     return;
   int sx = (int)gx,

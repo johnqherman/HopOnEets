@@ -25,10 +25,23 @@ static void net_handle(const std::string &ln) {
   int gn = sscanf(ln.c_str(), "g %ld %f %f %c %c %d %f %39s %d", &t, &x, &y, &eC,
                   &mC, &fl, &rot, anim, &frm);
   if (gn >= 3 && strncmp(ln.c_str(), "g ", 2) == 0) {
-    (void)t;
     if (valid_pos(x, y)) {
+      // shift current -> prev, then store the new sample; derive per-tick velocity for extrapolation
+      g_livePrevX = g_liveX;
+      g_livePrevY = g_liveY;
+      g_livePrevTick = g_liveTick;
       g_liveX = x;
       g_liveY = y;
+      g_liveTick = t;
+      long dtick = g_liveTick - g_livePrevTick;
+      if (g_liveValid && dtick > 0 && dtick <= GHOST_MAX_GAP_TICKS) {
+        g_liveVX = (g_liveX - g_livePrevX) / (float)dtick;
+        g_liveVY = (g_liveY - g_livePrevY) / (float)dtick;
+      } else {
+        g_liveVX = g_liveVY = 0.0f; // first sample, stale gap, or teleport -> don't fling
+      }
+      if (!g_liveValid)
+        g_ghostRInit = false; // first frame after any reset -> draw snaps instead of sliding across
       g_liveValid = true;
       g_liveLastTime = Time();
       if (gn >= 6) {
