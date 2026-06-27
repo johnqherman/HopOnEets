@@ -75,6 +75,8 @@ function fakeMod(port: number): Mod {
   mk(38696, "finn");
   mk(38697, "grace");
   mk(38698, "heath");
+  mk(38699, "ivan");
+  mk(38700, "june");
   await sleep(250);
   const A = fakeMod(38691),
     B = fakeMod(38692),
@@ -83,7 +85,9 @@ function fakeMod(port: number): Mod {
     E = fakeMod(38695),
     F = fakeMod(38696),
     G = fakeMod(38697),
-    H = fakeMod(38698);
+    H = fakeMod(38698),
+    I = fakeMod(38699),
+    J = fakeMod(38700);
   await sleep(120);
 
   // ---- 1) private host/join by code ----
@@ -332,7 +336,37 @@ function fakeMod(port: number): Mod {
     ok("forfeiter gets server-authoritative DEFEAT + rating: " + ffLoss);
   else if (ffLoss) fail("forfeiter series wrong: " + ffLoss);
 
-  [A, B, C, E, F].forEach((m) => m.close());
+  // ---- 3 drawn (both-failed) rounds in a row -> NO CONTEST, nobody wins ----
+  I.send("hello ivan");
+  J.send("hello june");
+  I.send("queue ranked");
+  J.send("queue ranked");
+  await I.expect((l) => l.startsWith("match "), "I match (nc test)");
+  await J.expect((l) => l.startsWith("match "), "J match (nc test)");
+  let ncI: string | null = null,
+    ncJ: string | null = null;
+  for (let r = 1; r <= 3; r++) {
+    I.send("finish 100 0 0"); // completed=0 -> both fail -> draw (mulligan)
+    J.send("finish 100 0 0");
+    if (r < 3) {
+      const ri = await I.expect((l) => l.startsWith("result "), `I draw ${r}`);
+      if (ri && ri.split(" ")[1] !== "tie") fail(`draw ${r} not a tie: ` + ri);
+      await J.expect((l) => l.startsWith("result "), `J draw ${r}`);
+      await I.expect((l) => l.startsWith("round "), `round ${r + 1} (I)`);
+      await J.expect((l) => l.startsWith("round "), `round ${r + 1} (J)`);
+    } else {
+      ncI = await I.expect((l) => l.startsWith("series "), "I no-contest");
+      ncJ = await J.expect((l) => l.startsWith("series "), "J no-contest");
+    }
+  }
+  if (ncI && ncI.split(" ")[1] === "nocontest")
+    ok("3 draws in a row -> NO CONTEST: " + ncI);
+  else if (ncI) fail("expected nocontest series: " + ncI);
+  if (ncJ && ncJ.split(" ")[1] === "nocontest")
+    ok("opponent also sees NO CONTEST");
+  else if (ncJ) fail("J nocontest wrong: " + ncJ);
+
+  [A, B, C, E, F, I, J].forEach((m) => m.close());
   bridges.forEach((b) => b.close());
   relay.close();
   await sleep(120);

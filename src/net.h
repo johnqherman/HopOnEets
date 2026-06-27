@@ -96,6 +96,7 @@ static void net_handle(const std::string &ln) {
     g_oppBuild.clear();
     g_oppBuildReady = false;
     g_noContest = false;
+    g_seriesNoContest = false;
     g_desync = false;
     g_oppHashes.clear();
     g_winForfeit = false;
@@ -176,6 +177,7 @@ static void net_handle(const std::string &ln) {
     g_youWins = yw;
     g_ghostWins = ow;
     g_interRound = false;
+    g_seriesNoContest = (strcmp(w, "nocontest") == 0); // too many draws -> voided
     g_seriesWon = (strcmp(w, "you") == 0);
     g_winForfeit = ff != 0;
     g_ratingRanked = rk != 0;
@@ -188,7 +190,8 @@ static void net_handle(const std::string &ln) {
     g_winShow = true;
     g_winStart = Time();
     g_winUntil = Time() + WINSCREEN_SECS;
-    PlaySound(g_seriesWon ? "Fanfare" : "Error");
+    PlaySound(g_seriesNoContest ? "GUI Click 1"
+                                : (g_seriesWon ? "Fanfare" : "Error"));
     g_seriesOver = false;
     g_seriesMsg[0] = 0;
   } else if (sscanf(ln.c_str(), "oppdrop %d", &iv) ==
