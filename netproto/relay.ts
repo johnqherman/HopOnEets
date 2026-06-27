@@ -18,6 +18,7 @@ interface Peer {
   finish: Finish | null;
   hostCode: string | null;
   wins: number;
+  mulligans: number; // consecutive drawn rounds (resets on any decisive round)
   ready: boolean;
   noContest: boolean;
   ranked: boolean;
@@ -33,7 +34,8 @@ interface Held {
 }
 // id = stable client UUID (rating key; names are spoofable so must not key the rating); name = display only
 const BEST_OF = 3,
-  WINS_NEEDED = 2;
+  WINS_NEEDED = 2,
+  MAX_MULLIGANS = 3; // this many drawn (both-failed) rounds in a row -> NO CONTEST, neither wins
 
 // ---- Glicko-2 rating ladder (ranked only); persisted JSON on the relay host, keyed by uuid ----
 // per player: rating r (display, 1500 base), deviation rd (350), volatility vol (0.06). TAU bounds
@@ -207,6 +209,7 @@ export function startRelay(
     A.opp = b;
     A.finish = null;
     A.wins = 0;
+    A.mulligans = 0;
     A.ready = false;
     A.noContest = false;
     A.ranked = ranked;
@@ -214,6 +217,7 @@ export function startRelay(
     B.opp = a;
     B.finish = null;
     B.wins = 0;
+    B.mulligans = 0;
     B.ready = false;
     B.noContest = false;
     B.ranked = ranked;
@@ -374,7 +378,19 @@ export function startRelay(
     });
     p.finish = null;
     q.finish = null;
-    log(`result ${p.match}: ${r.self.winner} (series ${p.wins}-${q.wins})`);
+    // mulligan tracking: a draw (both failed) replays the round; reset on any decisive round
+    const tie = r.self.winner === "tie";
+    if (tie) {
+      p.mulligans++;
+      q.mulligans++;
+    } else {
+      p.mulligans = 0;
+      q.mulligans = 0;
+    }
+    log(
+      `result ${p.match}: ${r.self.winner} (series ${p.wins}-${q.wins}${tie ? `, mulligan ${p.mulligans}/${MAX_MULLIGANS}` : ""})`,
+    );
+    const match = p.match;
     if (p.wins >= WINS_NEEDED || q.wins >= WINS_NEEDED) {
       // series decided
       const pWon = p.wins >= WINS_NEEDED;
@@ -417,6 +433,24 @@ export function startRelay(
       p.opp = null;
       q.match = null;
       q.opp = null; // free both to re-queue
+    } else if (tie && p.mulligans >= MAX_MULLIGANS) {
+      // too many draws in a row -> NO CONTEST: nobody wins, no rating, both back to menu
+      const nc = {
+        type: "series_over",
+        winner: "nocontest",
+        ranked: false, // no rating change on a no-contest
+        r_old: 0,
+        r_new: 0,
+      };
+      conn.send({ ...nc, you_wins: p.wins, opp_wins: q.wins });
+      p.opp.send({ ...nc, you_wins: q.wins, opp_wins: p.wins });
+      log(`no contest ${match}: ${MAX_MULLIGANS} draws in a row`);
+      clearRoundTimer(p);
+      clearRoundTimer(q);
+      p.wins = q.wins = 0;
+      p.mulligans = q.mulligans = 0;
+      p.match = q.match = null;
+      p.opp = q.opp = null; // free both to re-queue
     } else {
       startRound(conn, p.opp, p.wins + q.wins + 1);
     }
@@ -436,6 +470,7 @@ export function startRelay(
       finish: null,
       hostCode: null,
       wins: 0,
+      mulligans: 0,
       ready: false,
       noContest: false,
       ranked: false,

@@ -67,11 +67,15 @@ static void draw_winscreen() {
   GFX_ResetViewOffset();
   FillRect(0, 0, sw, sh, Color(14, 12, 26, 252));
   Color green(120, 255, 120, 255), red(255, 90, 80, 255),
-      white(245, 245, 255, 255), grey(180, 180, 200, 255);
-  const char *title = g_seriesWon ? "VICTORY" : "DEFEAT";
+      white(245, 245, 255, 255), grey(180, 180, 200, 255),
+      gold(230, 220, 120, 255);
+  const char *title =
+      g_seriesNoContest ? "NO CONTEST" : (g_seriesWon ? "VICTORY" : "DEFEAT");
   DrawTextCenteredOutlined(sw / 2, cy - 120, title, FONT_HUGE,
-                           g_seriesWon ? green : red);
-  const char *sub = g_winForfeit ? "by forfeit" : nullptr;
+                           g_seriesNoContest ? gold : (g_seriesWon ? green : red));
+  const char *sub = g_seriesNoContest ? "no result - too many draws"
+                    : g_winForfeit    ? "by forfeit"
+                                      : nullptr;
   char sc[32];
   if (!sub) {
     snprintf(sc, sizeof(sc), "%d - %d", g_youWins, g_ghostWins);

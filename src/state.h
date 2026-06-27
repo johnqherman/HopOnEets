@@ -150,6 +150,7 @@ static bool g_winShow = false;
 static double g_winUntil = 0.0;
 static double g_winStart = 0.0;
 static bool g_seriesWon = false;
+static bool g_seriesNoContest = false; // series voided (too many draws): nobody won, no rating
 static bool g_winForfeit = false;
 static bool g_ratingRanked = false;
 static int g_ratingOld = 0, g_ratingNew = 0;
