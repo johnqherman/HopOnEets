@@ -90,6 +90,7 @@ static bool g_matched = false, g_ranked = false;
 static bool g_queueing = false;       // in a queue: set on Ranked/Casual click, cleared on match/cancel
 static bool g_queueRanked = true;     // which pool we're queued for (drives the searching label)
 static double g_queueStart = 0.0;     // Time() when queueing began (for the elapsed-time display)
+static double g_lastQueueAssert = 0.0;// Time() of last "queue" re-assert (keeps us in the server queue across drops)
 static std::string g_oppId = "?";
 static int g_levelIndex =
     -1; // ranked level index from relay (resolved % pool size)

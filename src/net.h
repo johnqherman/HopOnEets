@@ -323,6 +323,27 @@ static void net_action(const std::string &cmd) {
   net_sendline(cmd);
 }
 
+// keep us in the server's matchmaking queue while searching: re-send "queue" periodically. queue membership
+// is per-connection and server-side, so a relay restart / proxy drop / brief blip silently evicts a waiting
+// player (their client still shows "searching"). re-asserting heals it within the interval; the relay keeps
+// our place if we're already queued (no starvation). also reconnect if the socket dropped while waiting.
+static void net_queue_tick() {
+  if (!g_queueing || g_matched)
+    return;
+  double now = Time();
+  if (!net_up()) {
+    if (now - g_lastReconnectTry >= 1.0) {
+      g_lastReconnectTry = now;
+      net_connect(); // re-hellos; the re-assert below re-enters the queue once up
+    }
+    return;
+  }
+  if (now - g_lastQueueAssert >= 15.0) {
+    g_lastQueueAssert = now;
+    net_sendline(g_queueRanked ? "queue ranked" : "queue casual");
+  }
+}
+
 // ---- checkpoint state-hash exchange (same-platform desync detection) ----
 // cross-platform hashes legitimately differ (FP physics) so are never compared
 // across platforms; same-platform mismatch = real desync -> flag, withhold

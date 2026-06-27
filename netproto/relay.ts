@@ -504,11 +504,12 @@ export function startRelay(
         }
         case "queue": {
           const ranked = m.ranked !== false; // default ranked
-          // drop from both pools first: dedupes, and lets a re-queue switch modes
-          rankedQueue = rankedQueue.filter((c) => c !== conn);
-          casualQueue = casualQueue.filter((c) => c !== conn);
           const q = ranked ? rankedQueue : casualQueue;
-          q.push(conn);
+          const other = ranked ? casualQueue : rankedQueue;
+          const oi = other.indexOf(conn);
+          if (oi >= 0) other.splice(oi, 1); // switching modes -> leave the other pool
+          // clients re-assert "queue" periodically to survive drops; keep your place if already in (no starvation)
+          if (!q.includes(conn)) q.push(conn);
           tryMatch(q, ranked);
           break;
         }
