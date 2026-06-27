@@ -107,6 +107,20 @@ static bool g_liveFlip = false;  // facing (mirrored)
 static float g_liveRot = 0.0f;   // opponent's rotation (rad) for tumbling (falling/projectile-hit)
 static char g_liveAnim[40] = ""; // opponent's current motion token ("-"/empty = none); maps to the .anim
 static int g_liveFrame = -1;     // opponent's current anim frame (-1 = none -> ghost cycles locally); frame-sync so play-once anims don't loop
+// ghost latency compensation tunables (conservative; worst case the ghost leads ~CAP/TICK_RATE seconds)
+static constexpr int GHOST_EXTRAP_CAP_TICKS = 16;   // ~267ms forward predict ceiling (horizontal)
+static constexpr int GHOST_EXTRAP_CAP_TICKS_Y = 6;  // smaller for Y: gravity breaks linear vertical predict
+static constexpr int GHOST_MAX_GAP_TICKS = 6;       // ignore velocity if frames are farther apart (stale/teleport)
+static constexpr float GHOST_MAX_STEP = 22.0f;      // max render correction px/tick: normal motion lands exactly
+                                                    // on the prediction (no lag); bigger jumps spread over frames
+static constexpr float GHOST_SNAP_DIST = 120.0f;    // jump farther than this -> snap (respawn/teleport, no slide)
+// ghost latency compensation: extrapolate the opponent forward by the frame's age (g_tick - g_liveTick)
+// in ticks, using a per-tick velocity from consecutive frames. g_ghostR* is the smoothed render pos.
+static float g_livePrevX = 0, g_livePrevY = 0;
+static long g_liveTick = 0, g_livePrevTick = 0; // opponent sim tick on the current/previous frame
+static float g_liveVX = 0, g_liveVY = 0;        // opponent velocity per tick (world units/tick)
+static float g_ghostRX = 0, g_ghostRY = 0;      // eased render position fed to the draw
+static bool g_ghostRInit = false;               // false -> snap to target next draw (first sample / after reset)
 static bool g_codeEntry = false;
 static std::string g_codeBuf;
 static bool g_nameEntry = false;
