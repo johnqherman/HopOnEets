@@ -189,9 +189,9 @@ static void draw_hud() {
     }
   }
 
-  // main menu, or the in-level pause screen. the post-match level load also reports paused, so exclude it
-  // via the engine's loading flag (World::StartLoading..StopLoading).
-  bool menu_surface = World_IsInMainMenu() || (World_IsPaused() && !World_IsLoading());
+  // main menu, or the in-level pause screen. a loading screen (incl. the menu->match load, which can still
+  // read as "main menu") suppresses the pill outright, so factor !World_IsLoading() across both.
+  bool menu_surface = !World_IsLoading() && (World_IsInMainMenu() || World_IsPaused());
   if (!g_interRound) {
     if (g_menuOpen) {
       if (menu_surface)
