@@ -76,8 +76,10 @@ export function startBridge(opts: BridgeOpts): {
           rot: a[7] ? +a[7] : 0,
           anim: a[8] || "-",
           frame: a[9] !== undefined ? +a[9] : -1,
+          vx: a[10] !== undefined ? +a[10] : 0,
+          vy: a[11] !== undefined ? +a[11] : 0,
         });
-        break; // a[4..9] = emo/mot/flip/rot/anim/frame
+        break; // a[4..11] = emo/mot/flip/rot/anim/frame/vx/vy
       case "hash":
         relay.send({ type: "hash", tick: +a[1], hash: a[2], platform: a[3] });
         break;

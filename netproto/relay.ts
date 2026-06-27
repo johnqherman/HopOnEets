@@ -573,6 +573,8 @@ export function startRelay(
             rot: m.rot ?? 0,
             anim: m.anim ?? "-",
             frame: m.frame ?? -1,
+            vx: m.vx ?? 0,
+            vy: m.vy ?? 0,
           });
           break;
         case "build":
