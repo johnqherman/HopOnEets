@@ -189,9 +189,9 @@ static void draw_hud() {
     }
   }
 
-  // main menu, or the in-level pause screen. pause halts the sim (IsSimulating false) while a loading
-  // screen keeps it live (true), so !IsSimulating distinguishes the pause screen from loading.
-  bool menu_surface = World_IsInMainMenu() || (World_IsPaused() && !World_IsSimulating());
+  // main menu, or the in-level pause screen. the post-match level load also reports paused, so exclude it
+  // via the engine's loading flag (World::StartLoading..StopLoading).
+  bool menu_surface = World_IsInMainMenu() || (World_IsPaused() && !World_IsLoading());
   if (!g_interRound) {
     if (g_menuOpen) {
       if (menu_surface)
