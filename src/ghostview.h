@@ -74,14 +74,19 @@ static void draw_ghost(float dt) {
     return;
   if (!(g_matched && g_liveValid && (Time() - g_liveLastTime) < 0.4))
     return; // freshness gate
-  // latency compensation: predict the opponent forward by the frame's age (g_tick - g_liveTick) ticks
-  // at their measured velocity. lag is recomputed every frame so it tracks latency changes in real time.
-  long lag = g_tick - g_liveTick;
-  if (lag < 0) lag = 0;
-  long lagX = lag > GHOST_EXTRAP_CAP_TICKS ? GHOST_EXTRAP_CAP_TICKS : lag;
-  long lagY = lag > GHOST_EXTRAP_CAP_TICKS_Y ? GHOST_EXTRAP_CAP_TICKS_Y : lag;
-  float tx = g_liveX + g_liveVX * (float)lagX;
-  float ty = g_liveY + g_liveVY * (float)lagY;
+  // latency compensation: predict the opponent forward by the frame's age (g_tick - g_liveTick) ticks at
+  // their (exact, sender-supplied) velocity. EMA-smooth the lag so network arrival jitter doesn't make the
+  // predicted distance bounce; it still tracks real latency changes within a few frames.
+  float rawLag = (float)(g_tick - g_liveTick);
+  if (rawLag < 0) rawLag = 0;
+  if (!g_ghostRInit) g_lagSmooth = rawLag; // snap the estimate on (re)init, no ramp-in
+  else g_lagSmooth += (rawLag - g_lagSmooth) * GHOST_LAG_SMOOTH;
+  float lagX = g_lagSmooth > GHOST_EXTRAP_CAP_TICKS ? GHOST_EXTRAP_CAP_TICKS : g_lagSmooth;
+  float lagY = g_lagSmooth > GHOST_EXTRAP_CAP_TICKS_Y ? GHOST_EXTRAP_CAP_TICKS_Y : g_lagSmooth;
+  // linear extrapolation both axes (velocity is exact now). gravity (1/2*a*t^2) needs clean accel; revisit
+  // once the sender streams accel too — differencing even exact velocity still adds some Y noise.
+  float tx = g_liveX + g_liveVX * lagX;
+  float ty = g_liveY + g_liveVY * lagY;
   // slew-limit (not exponential ease): exponential easing trails a moving target by ~v/k, adding a constant
   // lag. instead sit EXACTLY on the prediction during normal motion (zero added lag) and only spread out a
   // big correction over a few frames. step scales with frame time so it's framerate-independent.

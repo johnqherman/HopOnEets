@@ -22,11 +22,12 @@ static void net_handle(const std::string &ln) {
   float rot = 0.0f;
   char anim[40] = {0};
   int frm = -1;
-  int gn = sscanf(ln.c_str(), "g %ld %f %f %c %c %d %f %39s %d", &t, &x, &y, &eC,
-                  &mC, &fl, &rot, anim, &frm);
+  float vlx = 0.0f, vly = 0.0f;
+  int gn = sscanf(ln.c_str(), "g %ld %f %f %c %c %d %f %39s %d %f %f", &t, &x, &y,
+                  &eC, &mC, &fl, &rot, anim, &frm, &vlx, &vly);
   if (gn >= 3 && strncmp(ln.c_str(), "g ", 2) == 0) {
     if (valid_pos(x, y)) {
-      // shift current -> prev, then store the new sample; derive per-tick velocity for extrapolation
+      // shift current -> prev, then store the new sample
       g_livePrevX = g_liveX;
       g_livePrevY = g_liveY;
       g_livePrevTick = g_liveTick;
@@ -34,8 +35,12 @@ static void net_handle(const std::string &ln) {
       g_liveY = y;
       g_liveTick = t;
       long dtick = g_liveTick - g_livePrevTick;
-      if (g_liveValid && dtick > 0 && dtick <= GHOST_MAX_GAP_TICKS) {
-        g_liveVX = (g_liveX - g_livePrevX) / (float)dtick;
+      if (gn >= 11) {
+        // exact engine velocity from the sender (per tick) -> no noisy position-differencing
+        g_liveVX = vlx;
+        g_liveVY = vly;
+      } else if (g_liveValid && dtick > 0 && dtick <= GHOST_MAX_GAP_TICKS) {
+        g_liveVX = (g_liveX - g_livePrevX) / (float)dtick; // legacy sender: estimate from positions
         g_liveVY = (g_liveY - g_livePrevY) / (float)dtick;
       } else {
         g_liveVX = g_liveVY = 0.0f; // first sample, stale gap, or teleport -> don't fling

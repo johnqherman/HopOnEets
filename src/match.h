@@ -243,9 +243,11 @@ static void match_update() {
             }
           int frame = Object_GetAnimFrameIndex(e); // exact anim frame -> ghost mirrors it (no looping)
           if (frame > 0) frame--;                   // engine index is 1-based; DrawAnim wants 0-based
-          char pb[110];
-          snprintf(pb, sizeof(pb), "pos %ld %.1f %.1f %c %c %d %.3f %s %d",
-                   g_tick, ep.x, ep.y, emo, mot, flip, rot, tok, frame);
+          Vector2 vel = Object_GetVelocity(e); // exact per-tick velocity -> clean ghost extrapolation
+          char pb[140];
+          snprintf(pb, sizeof(pb), "pos %ld %.2f %.2f %c %c %d %.3f %s %d %.3f %.3f",
+                   g_tick, ep.x, ep.y, emo, mot, flip, rot, tok, frame, vel.x,
+                   vel.y);
           net_sendline(pb);
         }
         if (g_tick / HASH_INTERVAL >
