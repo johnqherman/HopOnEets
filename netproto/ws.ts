@@ -96,6 +96,7 @@ export interface WSConn {
 
 // server: handle http 'upgrade'
 export function accept(req: IncomingMessage, socket: net.Socket): WSConn {
+  socket.setNoDelay(true); // no Nagle: forward frames immediately
   const k = req.headers["sec-websocket-key"] as string;
   socket.write(
     "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
@@ -119,6 +120,7 @@ export function connect(
         `Connection: Upgrade\r\nSec-WebSocket-Key: ${key}\r\nSec-WebSocket-Version: 13\r\n\r\n`,
     );
   });
+  socket.setNoDelay(true); // no Nagle on this leg too
   let upgraded = false,
     pending = Buffer.alloc(0);
   let conn: WSConn | null = null;

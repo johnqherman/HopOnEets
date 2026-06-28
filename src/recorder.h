@@ -34,6 +34,7 @@ static void begin_sim(bool fromReset) {
   g_retryActive = false;
   g_engineTickBase = Engine_GetSimTick(); // g_tick = counter - this baseline
   g_lastHashBucket = -1;
+  g_lastPosBucket = -1; // first sim tick sends a pos immediately (ghost appears frame 1)
   if (g_matched && g_roundStart == 0.0)
     g_roundStart = Time(); // round clock starts at first Go
   std::vector<uint64_t> seq;
