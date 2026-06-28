@@ -25,30 +25,43 @@ static void draw_menu() {
     if (UI::Button("Retry connection"))
       net_connect();
   }
-  if (g_nameEntry) {
-    char nl[64];
-    snprintf(nl, sizeof(nl), "User: %s_", g_nameBuf.c_str());
-    UI::Label(nl);
-    if (UI::Button("Set name")) {
-      set_player_name(g_nameBuf);
-      g_nameEntry = false;
-      StopTextInput();
-    }
-  } else {
-    char nm[64];
-    if (g_myRating > 0)
-      snprintf(nm, sizeof(nm), "User: %s (%d)", g_playerId.c_str(), g_myRating);
-    else
-      snprintf(nm, sizeof(nm), "User: %s", g_playerId.c_str());
-    UI::Label(nm);
-    if (UI::Button("Edit name")) {
-      g_nameEntry = true;
-      g_nameBuf = g_playerId;
-      StartTextInput();
+  if (!g_matched) { // name editing only in the lobby - no mid-match name changes
+    if (g_nameEntry) {
+      char nl[64];
+      snprintf(nl, sizeof(nl), "User: %s_", g_nameBuf.c_str());
+      UI::Label(nl);
+      if (UI::Button("Set name")) {
+        set_player_name(g_nameBuf);
+        g_nameEntry = false;
+        StopTextInput();
+      }
+    } else {
+      char nm[64];
+      if (g_myRating > 0)
+        snprintf(nm, sizeof(nm), "User: %s (%d)", g_playerId.c_str(),
+                 g_myRating);
+      else
+        snprintf(nm, sizeof(nm), "User: %s", g_playerId.c_str());
+      UI::Label(nm);
+      if (UI::Button("Edit name")) {
+        g_nameEntry = true;
+        g_nameBuf = g_playerId;
+        StartTextInput();
+      }
     }
   }
 
   if (g_matched) {
+    // vote to replay this round; fires only if the opponent also votes
+    if (!g_localMull) {
+      if (UI::Button("Vote to mulligan"))
+        vote_mulligan(true);
+    } else {
+      if (UI::Button("Cancel mulligan vote"))
+        vote_mulligan(false);
+    }
+    if (g_oppMull)
+      UI::Label("Opponent voted to mulligan");
     if (!g_confirmForfeit) {
       if (UI::Button("Leave & forfeit"))
         g_confirmForfeit = true;

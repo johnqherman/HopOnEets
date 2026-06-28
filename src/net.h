@@ -107,6 +107,8 @@ static void net_handle(const std::string &ln) {
     g_winForfeit = false;
     g_lastRoundWin = 0;
     g_lastRoundTie = false;
+    g_localMull = false;
+    g_oppMull = false;
     g_oppDropped = false;
     g_reconnectUntil = 0.0;
     g_seriesOver = false;
@@ -135,6 +137,14 @@ static void net_handle(const std::string &ln) {
       load_match_level();
       net_sendline("ready");
     }
+  } else if (sscanf(ln.c_str(), "oppmull %d", &iv) == 1) {
+    g_oppMull = (iv != 0); // opponent's mulligan vote -> HUD + menu indicator
+  } else if (strncmp(ln.c_str(), "mulligan", 8) == 0) {
+    // both voted -> relay is replaying this round; mirror the tie path so the MULLIGAN! card shows
+    g_lastRoundWin = 0; // must clear, else a prior decisive round shows "You won round N"
+    g_lastRoundTie = true;
+    g_localMull = false;
+    g_oppMull = false;
   } else if (sscanf(ln.c_str(), "countdown %d %d", &iv, &cap) >=
              1) { // countdown <buildSecs> <roundCap>
     if (iv > 0)
@@ -302,6 +312,12 @@ static void forfeit_match() {
   g_confirmForfeit = false;
   net_sendline("forfeit");
   snprintf(g_netMsg, sizeof(g_netMsg), "forfeiting...");
+}
+
+// vote (or retract) to replay this round; the relay replays only when BOTH players have voted
+static void vote_mulligan(bool on) {
+  g_localMull = on;
+  net_sendline(on ? "mullvote 1" : "mullvote 0");
 }
 
 // mid-match drop recovery: retry reconnect; relay holds match ~20s then

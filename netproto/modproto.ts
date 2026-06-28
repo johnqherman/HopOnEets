@@ -51,6 +51,8 @@ export function modLineToMsg(line: string, fallbackName = "anon"): any | null {
       };
     case "forfeit":
       return { type: "forfeit" };
+    case "mullvote":
+      return { type: "mullvote", on: a[1] === "1" };
     default:
       return null;
   }
@@ -95,6 +97,10 @@ export function msgToModLine(m: any): string | null {
       return "opprejoin";
     case "rejoin":
       return `rejoin ${m.opponent} ${m.ranked ? 1 : 0} ${m.you_wins} ${m.opp_wins}`;
+    case "opp_mulligan_vote":
+      return `oppmull ${m.on ? 1 : 0}`;
+    case "mulligan":
+      return "mulligan";
     default:
       return null;
   }
