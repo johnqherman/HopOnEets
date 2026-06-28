@@ -169,6 +169,12 @@ static void mod_on_text(const char *utf8) {
 static void mod_on_key(int key, int mods, int down) {
   if (!down)
     return;
+  // in a match, Esc toggles the overlay menu WITHOUT pausing - the engine pause would freeze the
+  // deterministic sim and desync vs the opponent (match_update force-clears the pause flag)
+  if (key == EKEY_ESCAPE && g_matched && in_level()) {
+    g_menuOpen = !g_menuOpen;
+    return;
+  }
   if (g_nameEntry) {
     if (key == EKEY_BACKSPACE) {
       if (!g_nameBuf.empty())

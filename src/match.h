@@ -217,6 +217,12 @@ static void match_update() {
   } else
     g_lastRoundTick = -1;
 
+  // Esc/pause must never freeze a live match sim. World_IsPaused() and the sim-step gate share one
+  // flag (Simulator+0xb9), so a local pause stalls our deterministic stream while the opponent runs
+  // on -> desync. Clear it every frame during the sim; the menu is a live overlay (see mod_on_key).
+  if (g_matched && g_phase == SIM && !g_interRound)
+    Simulator_SetPaused(false);
+
   if (g_phase == SIM && simulating && !World_IsPaused()) {
     Object *e = World_GetEets();
     if (e) { // skip when Eets isn't live yet (avoids garbage 0,0)
