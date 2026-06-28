@@ -3,6 +3,7 @@
 #include "state.h"
 #include "levels.h"
 #include "ws_client.h"
+#include "animtable.h"
 
 static void net_sendline(const std::string &s);
 [[maybe_unused]] static void note_opp_hash(long tick, uint64_t h,
@@ -58,7 +59,12 @@ static void net_handle(const std::string &ln) {
         g_liveRot = rot;
       if (gn >= 8) {
         anim[39] = 0;
-        strncpy(g_liveAnim, anim, sizeof(g_liveAnim) - 1);
+        // numeric token = anim-table id -> base name; raw names + "-" pass through
+        const char *an = anim;
+        if (anim_token_is_id(anim))
+          if (const char *nm = anim_id_to_name(atoi(anim)))
+            an = nm;
+        strncpy(g_liveAnim, an, sizeof(g_liveAnim) - 1);
         g_liveAnim[sizeof(g_liveAnim) - 1] = 0;
       }
       g_liveFrame = (gn >= 9) ? frm : -1;
@@ -471,6 +477,9 @@ static void mod_init() {
     SaveSet(MOD, "player_uuid", g_playerUuid.c_str());
   }
   g_pinSeed = cfgI("pin_seed", 0) != 0;
+  g_posSendInterval = cfgI("pos_interval", 4); // ghost stream rate (ticks/send); 4 = 15Hz
+  if (g_posSendInterval < 1)
+    g_posSendInterval = 1;
   g_relayUrl = cfgS("relay_url", "wss://hoe.raccoonlagoon.com");
   const char *savedName = SaveGet(MOD, "player_id", nullptr);
   g_nameManual = (savedName && *savedName);

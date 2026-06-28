@@ -1,6 +1,7 @@
 #pragma once
 #include <cmath> // atan2f (opponent rotation)
 #include "state.h"
+#include "animtable.h"
 
 // must report a finish even on failure (death/DNF) or relay stalls forever;
 // idempotent per round via g_finishTick
@@ -228,8 +229,9 @@ static void match_update() {
     if (e) { // skip when Eets isn't live yet (avoids garbage 0,0)
       Vector2 ep = Object_GetPosition(e);
       if (valid_pos(ep.x, ep.y)) {
-        if (g_matched) { // stream pos + anim so opponent's ghost mirrors our
-                         // Eets
+        if (g_matched && g_tick / g_posSendInterval > g_lastPosBucket) {
+          g_lastPosBucket = g_tick / g_posSendInterval; // throttle ~15Hz; receiver extrapolates between
+          // stream pos + anim so opponent's ghost mirrors our Eets
           char emo, mot;
           int flip;
           read_eets_anim(e, emo, mot, flip);
@@ -247,11 +249,15 @@ static void match_update() {
               tok[j] = 0;
               if (!j) { tok[0] = '-'; tok[1] = 0; }
             }
+          int aid = anim_name_to_id(tok); // known anim -> small int id, saves wire bytes
+          if (aid >= 0)
+            snprintf(tok, sizeof(tok), "%d", aid);
           int frame = Object_GetAnimFrameIndex(e); // exact anim frame -> ghost mirrors it (no looping)
           if (frame > 0) frame--;                   // engine index is 1-based; DrawAnim wants 0-based
           Vector2 vel = Object_GetVelocity(e); // exact per-tick velocity -> clean ghost extrapolation
           char pb[140];
-          snprintf(pb, sizeof(pb), "pos %ld %.2f %.2f %c %c %d %.3f %s %d %.3f %.3f",
+          // quantize: receiver truncates to int px anyway; trims ~12 B/line
+          snprintf(pb, sizeof(pb), "pos %ld %.0f %.0f %c %c %d %.2f %s %d %.1f %.1f",
                    g_tick, ep.x, ep.y, emo, mot, flip, rot, tok, frame, vel.x,
                    vel.y);
           net_sendline(pb);

@@ -192,6 +192,8 @@ static void wsc_poll(void (*onmsg)(const std::string &)) {
 }
 #else
 #include <sys/socket.h>
+#include <netinet/in.h>  // IPPROTO_TCP
+#include <netinet/tcp.h> // TCP_NODELAY
 #include <netdb.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -363,6 +365,11 @@ static bool wsc_connect(const std::string &url) {
   if (fd < 0)
     return false;
   g_wsFd = fd;
+  // no Nagle: send tiny frames immediately; one option covers plain + TLS (same fd)
+  {
+    int one = 1;
+    setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
+  }
 
   if (g_wsTls) {
     WscSSL &o = wsc_ssl();

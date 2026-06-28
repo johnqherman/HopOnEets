@@ -52,6 +52,9 @@ static long g_engineTickBase =
 static long g_lastHashBucket =
     -1; // sample on bucket change so a tick jump (engine sub-step) can't skip a
         // sample + misalign the compare
+static long g_lastPosBucket = -1; // throttle: send a pos at most once per bucket
+static int g_posSendInterval =
+    4; // ticks between pos sends (60/4 = 15Hz); hidden cfg "pos_interval"
 static int g_resets = 0;
 static long g_finishTick = -1;
 static int g_roundCounter = 0;
