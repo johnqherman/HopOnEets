@@ -28,7 +28,8 @@ static void draw_showdown() {
     DrawAnimFrozenFit(g_ghostAnim.c_str(), lcx, eetsY, th, white, false);
     DrawAnimFrozenFit(g_ghostAnim.c_str(), rcx, eetsY, th, white,
                       true); // mirrored
-    DrawTextCenteredOutlined(sw / 2, cy - 24, "VS", FONT_HUGE, yellow);
+    DrawTextCenteredOutlined(sw / 2, cy - 24, "VS", FONT_HUGE, yellow,
+                             Color(0, 0, 0, 200), STYLE_BRADY);
     int nameY = eetsY - th / 2 - 26;
     char ln[48], rn[48];
     if (g_ranked && g_myRating > 0)
@@ -39,8 +40,10 @@ static void draw_showdown() {
       snprintf(rn, sizeof(rn), "%s (%d)", g_oppId.c_str(), g_oppRating);
     else
       snprintf(rn, sizeof(rn), "%s", g_oppId.c_str());
-    DrawTextCenteredOutlined(lcx, nameY, ln, FONT_BIG, Color(150, 220, 255, 255));
-    DrawTextCenteredOutlined(rcx, nameY, rn, FONT_BIG, Color(255, 160, 120, 255));
+    DrawTextCenteredOutlined(lcx, nameY, ln, FONT_BIG, Color(150, 220, 255, 255),
+                             Color(0, 0, 0, 200), STYLE_BRADY);
+    DrawTextCenteredOutlined(rcx, nameY, rn, FONT_BIG, Color(255, 160, 120, 255),
+                             Color(0, 0, 0, 200), STYLE_BRADY);
   } else { // between rounds
     if (g_lastRoundWin != 0) {
       int prev = g_showdownRound -
@@ -51,13 +54,16 @@ static void draw_showdown() {
       else
         snprintf(wl, sizeof(wl), "%s won round %d", g_oppId.c_str(), prev);
       DrawTextCenteredOutlined(sw / 2, cy - 74, wl, FONT_BIG,
-                               g_lastRoundWin > 0 ? green : red);
+                               g_lastRoundWin > 0 ? green : red,
+                               Color(0, 0, 0, 200), STYLE_BRADY);
     } else if (g_lastRoundTie) { // both DNF: same round number, fresh map -> mulligan
-      DrawTextCenteredOutlined(sw / 2, cy - 74, "MULLIGAN", FONT_BIG, yellow);
+      DrawTextCenteredOutlined(sw / 2, cy - 74, "MULLIGAN", FONT_BIG, yellow,
+                               Color(0, 0, 0, 200), STYLE_BRADY);
     }
     char rt[32];
     snprintf(rt, sizeof(rt), "ROUND %d", g_showdownRound);
-    DrawTextCenteredOutlined(sw / 2, cy - 24, rt, FONT_HUGE, yellow);
+    DrawTextCenteredOutlined(sw / 2, cy - 24, rt, FONT_HUGE, yellow,
+                             Color(0, 0, 0, 200), STYLE_BRADY);
   }
 }
 
@@ -71,8 +77,10 @@ static void draw_winscreen() {
       gold(230, 220, 120, 255);
   const char *title =
       g_seriesNoContest ? "NO CONTEST" : (g_seriesWon ? "VICTORY" : "DEFEAT");
+  const Color shadow(0, 0, 0, 200);
   DrawTextCenteredOutlined(sw / 2, cy - 120, title, FONT_HUGE,
-                           g_seriesNoContest ? gold : (g_seriesWon ? green : red));
+                           g_seriesNoContest ? gold : (g_seriesWon ? green : red),
+                           shadow, STYLE_BRADY);
   const char *sub = g_seriesNoContest ? "no result - too many draws"
                     : g_winForfeit    ? "by forfeit"
                                       : nullptr;
@@ -81,7 +89,8 @@ static void draw_winscreen() {
     snprintf(sc, sizeof(sc), "%d - %d", g_youWins, g_ghostWins);
     sub = sc;
   }
-  DrawTextCenteredOutlined(sw / 2, cy - 56, sub, FONT_BIG, white);
+  DrawTextCenteredOutlined(sw / 2, cy - 56, sub, FONT_BIG, white, shadow,
+                           STYLE_BRADY);
   if (g_ratingRanked) {
     double a = (Time() - g_winStart - 0.6) / 1.8;
     if (a < 0)
@@ -93,15 +102,15 @@ static void draw_winscreen() {
     char el[48];
     snprintf(el, sizeof(el), "RATING %d", shown);
     DrawTextCenteredOutlined(sw / 2, cy + 6, el, FONT_BIG,
-                             Color(255, 232, 40, 255));
+                             Color(255, 232, 40, 255), shadow, STYLE_BRADY);
     int d = g_ratingNew - g_ratingOld;
     char dl[24];
     snprintf(dl, sizeof(dl), "%+d", d);
-    DrawTextCenteredOutlined(sw / 2, cy + 46, dl, FONT_BIG,
-                             d >= 0 ? green : red);
+    DrawTextCenteredOutlined(sw / 2, cy + 46, dl, FONT_BIG, d >= 0 ? green : red,
+                             shadow, STYLE_BRADY);
   }
   DrawTextCenteredOutlined(sw / 2, sh - 56, "returning to menu...", FONT_NORMAL,
-                           grey);
+                           grey, shadow, STYLE_BRADY);
 }
 
 static void draw_hud() {
@@ -122,7 +131,8 @@ static void draw_hud() {
       snprintf(b, sizeof(b), "DISCONNECTED. AUTO-WIN IN: %.1f", left);
     }
     DrawTextCenteredOutlined(ScreenWidth() / 2, ScreenHeight() / 2 - 100, b,
-                             FONT_BIG, Color(255, 200, 80, 255));
+                             FONT_BIG, Color(255, 200, 80, 255),
+                             Color(0, 0, 0, 200), STYLE_BRADY);
   }
   if (in_level()) {
     bool inMatch = (g_matched || g_matchActive);
@@ -137,11 +147,17 @@ static void draw_hud() {
     } // draw_ghost gates on g_liveValid freshness
 
     if (!g_interRound) { // mid-transition victory makes draw calls unsafe
-      char hud[200];
-      snprintf(hud, sizeof(hud), "HOP ON EETS %s | %s | t=%.2fs",
-               g_matchActive ? "[MATCH]" : "[practice]", g_status,
-               g_tick / (double)TICK_RATE);
-      DrawTextOutlined(10, 30, hud, FONT_NORMAL, Color(255, 232, 40, 255));
+      const Color shadow(0, 0, 0, 200), cyan(150, 220, 255, 255),
+          amber(255, 232, 40, 255), warn(255, 90, 80, 255);
+      const int pad = 28; // matching left/right margin from the screen edges
+      // who you're playing
+      if (g_matched) {
+        char on[96];
+        snprintf(on, sizeof(on), "ONLINE vs %s   %s", g_oppId.c_str(),
+                 g_ranked ? "(RANKED)" : "(CASUAL)");
+        DrawTextOutlined(pad, 30, on, FONT_NORMAL, cyan, shadow, STYLE_BRADY);
+      }
+      // build / retry countdown
       if (inMatch && g_phase == BUILD && g_buildRemain > 0) {
         int bs = (int)g_buildRemain;
         if (g_buildRemain > (double)bs)
@@ -149,46 +165,26 @@ static void draw_hud() {
         char cd[64];
         snprintf(cd, sizeof(cd), "%s %ds", g_retryActive ? "RETRY" : "BUILD",
                  bs);
-        DrawTextOutlined(10, 52, cd, FONT_BIG,
-                         g_buildRemain < 5 ? Color(255, 90, 80, 255)
-                                           : Color(255, 232, 40, 255));
+        DrawTextOutlined(pad, 62, cd, FONT_HUGE, g_buildRemain < 5 ? warn : amber,
+                         shadow, STYLE_BRADY);
       }
-      if (g_matched && g_deaths > 0) {
-        char dc[48];
-        snprintf(dc, sizeof(dc), "deaths: %d", g_deaths);
-        DrawTextOutlined(10, 130, dc, FONT_NORMAL, Color(255, 160, 90, 255));
-      }
-      if (g_matched &&
-          g_roundCapSeconds >
-              0) { // round clock: full during build, counts down from first Go
+      // round number + the round's remaining time, flush to the right edge
+      if (g_matched && g_roundCapSeconds > 0) {
         double left = (g_roundStart > 0)
                           ? (g_roundCapSeconds - (Time() - g_roundStart))
                           : (double)g_roundCapSeconds;
         if (left < 0)
           left = 0;
         char rc[40];
-        snprintf(rc, sizeof(rc), "ROUND %d:%02d", (int)left / 60,
-                 (int)left % 60);
-        DrawTextOutlined(840, 30, rc, FONT_NORMAL,
-                         left < 20 ? Color(255, 90, 80, 255)
-                                   : Color(150, 220, 255, 255));
-      }
-      if (g_matched) {
-        char on[96];
-        snprintf(on, sizeof(on), "ONLINE vs %s%s", g_oppId.c_str(),
-                 g_ranked ? " [RANKED]" : "");
-        DrawTextOutlined(10, 112, on, FONT_NORMAL, Color(150, 220, 255, 255));
-      }
-      if (g_roundMsg[0])
-        DrawTextOutlined(10, 74, g_roundMsg, FONT_NORMAL,
-                         Color(255, 255, 255, 255));
-      if (g_desync || g_noContest) {
-        char db[80];
-        snprintf(db, sizeof(db),
-                 g_noContest ? "NO CONTEST (desync) - not ranked"
-                             : "DESYNC @t%ld - result withheld",
-                 g_desyncTick);
-        DrawTextOutlined(10, 92, db, FONT_NORMAL, Color(255, 90, 80, 255));
+        snprintf(rc, sizeof(rc), "ROUND %d   %d:%02d",
+                 g_youWins + g_ghostWins + 1, (int)left / 60, (int)left % 60);
+        // anchor on a constant-width template, not the live string: proportional digit widths change every
+        // second, so measuring `rc` itself made the position jitter horizontally. fixed template = stable x.
+        // the template uses the widest digit (0), so trim a bit to sit flush right with typical digits.
+        int tw = MeasureTextWidth("ROUND 0   0:00", FONT_BIG, STYLE_BRADY) - 36;
+        if (tw <= 0) tw = 12 * UI::fontPx(FONT_BIG) * 3 / 5; // Win fallback
+        DrawTextOutlined(ScreenWidth() - pad - tw, 30, rc, FONT_BIG, // ~pad from right, matching ONLINE's pad from left
+                         left < 20 ? warn : cyan, shadow, STYLE_BRADY);
       }
     }
   }

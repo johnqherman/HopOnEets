@@ -194,18 +194,4 @@ static void mod_on_key(int key, int mods, int down) {
       return;
     }
   }
-  bool cs = (mods & EKMOD_CTRL) && (mods & EKMOD_SHIFT);
-  if (cs && (key == 'h' || key == 'H')) {
-    g_matchActive = !g_matchActive;
-    Eets::Log("hop_on_eets: match mode %s", g_matchActive ? "ON" : "OFF");
-    if (g_matchActive && g_phase == SIM)
-      engage_determinism();
-  } else if (cs && (key == 'r' || key == 'R')) {
-    g_youWins = g_ghostWins = 0;
-    g_roundCounter = 0;
-    g_roundMsg[0] = 0;
-    g_seriesOver = false;
-    g_seriesMsg[0] = 0;
-    Eets::Log("hop_on_eets: new match");
-  }
 }

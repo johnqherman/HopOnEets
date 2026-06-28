@@ -109,7 +109,7 @@ static char g_liveAnim[40] = ""; // opponent's current motion token ("-"/empty =
 static int g_liveFrame = -1;     // opponent's current anim frame (-1 = none -> ghost cycles locally); frame-sync so play-once anims don't loop
 // ghost latency compensation tunables (conservative; worst case the ghost leads ~CAP/TICK_RATE seconds)
 static constexpr int GHOST_EXTRAP_CAP_TICKS = 16;   // ~267ms forward predict ceiling (horizontal)
-static constexpr int GHOST_EXTRAP_CAP_TICKS_Y = 10; // tighter on Y: linear predict overshoots accelerating motion
+static constexpr int GHOST_EXTRAP_CAP_TICKS_Y = 16; // Y models gravity now, so it can predict as far as X
 static constexpr int GHOST_MAX_GAP_TICKS = 6;       // ignore velocity if frames are farther apart (stale/teleport)
 static constexpr float GHOST_MAX_STEP = 22.0f;      // max render correction px/tick: normal motion lands exactly
                                                     // on the prediction (no lag); bigger jumps spread over frames
