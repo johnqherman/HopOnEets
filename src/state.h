@@ -128,6 +128,8 @@ static std::string g_codeBuf;
 static bool g_nameEntry = false;
 static std::string g_nameBuf;
 static bool g_confirmForfeit = false;
+static bool g_localMull = false; // we voted to mulligan this round (cleared on round load / fire)
+static bool g_oppMull = false;   // opponent voted to mulligan (HUD indicator + menu label)
 // reconnect window: mid-match drop holds the relay match briefly so we can
 // rejoin
 static bool g_oppDropped = false;

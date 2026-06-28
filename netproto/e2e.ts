@@ -366,6 +366,76 @@ function fakeMod(port: number): Mod {
     ok("opponent also sees NO CONTEST");
   else if (ncJ) fail("J nocontest wrong: " + ncJ);
 
+  // ---- vote-to-mulligan: mutual consent replays the round; one-sided does nothing ----
+  mk(38701, "kara");
+  mk(38702, "liam");
+  await sleep(200);
+  const K = fakeMod(38701),
+    L = fakeMod(38702);
+  K.send("hello kara");
+  L.send("hello liam");
+  K.send("queue ranked");
+  L.send("queue ranked");
+  await K.expect((l) => l.startsWith("match "), "K match (mull test)");
+  await L.expect((l) => l.startsWith("match "), "L match (mull test)");
+  // one-sided vote: opponent is notified, but no replay fires
+  K.send("mullvote 1");
+  const lv1 = await L.expect((l) => l.startsWith("oppmull "), "L sees K vote");
+  if (lv1 === "oppmull 1") ok("one-sided vote relayed K->L: " + lv1);
+  else if (lv1) fail("oppmull wrong: " + lv1);
+  await sleep(300);
+  if (K.seen((l) => l === "mulligan") || L.seen((l) => l === "mulligan"))
+    fail("mulligan fired on a single vote");
+  else ok("single vote does not fire a mulligan");
+  // retract clears the opponent's indicator
+  K.send("mullvote 0");
+  const lv0 = await L.expect((l) => l === "oppmull 0", "L sees K retract");
+  if (lv0) ok("vote retract relayed: " + lv0);
+  // both vote -> replay: both get `mulligan` then a fresh `round` for the same round slot (1)
+  K.send("mullvote 1");
+  await L.expect((l) => l === "oppmull 1", "L sees K re-vote");
+  L.send("mullvote 1");
+  const mK = await K.expect((l) => l === "mulligan", "K mulligan fires");
+  const mL = await L.expect((l) => l === "mulligan", "L mulligan fires");
+  if (mK && mL) ok("both voted -> mulligan fires for both");
+  const rK = await K.expect((l) => l.startsWith("round "), "K round replays");
+  const rL = await L.expect((l) => l.startsWith("round "), "L round replays");
+  if (rK && rK.split(" ")[1] === "1" && rL && rL.split(" ")[1] === "1")
+    ok("mulligan replays the same round slot (round 1): " + rK);
+  else if (rK) fail("mulligan round wrong: " + rK + " / " + rL);
+  K.close();
+  L.close();
+
+  // ---- a real finish after voting clears the vote; it must not persist into the next round ----
+  mk(38703, "mira");
+  mk(38704, "nash");
+  await sleep(200);
+  const M = fakeMod(38703),
+    N = fakeMod(38704);
+  M.send("hello mira");
+  N.send("hello nash");
+  M.send("queue ranked");
+  N.send("queue ranked");
+  await M.expect((l) => l.startsWith("match "), "M match (finish-clears test)");
+  await N.expect((l) => l.startsWith("match "), "N match (finish-clears test)");
+  // M votes to mulligan, then actually completes the round (first-to-complete wins it)
+  M.send("mullvote 1");
+  await N.expect((l) => l === "oppmull 1", "N sees M vote pre-finish");
+  M.send("finish 100 1 5"); // completed=1 -> M wins round 1 immediately
+  const mr = await M.expect((l) => l.startsWith("result you"), "M wins round 1");
+  if (mr) ok("finish after voting wins the round: " + mr);
+  await M.expect((l) => l.startsWith("round 2"), "M round 2 starts");
+  await N.expect((l) => l.startsWith("round 2"), "N round 2 starts");
+  // the win cleared M's vote on the relay: N voting alone in round 2 must NOT fire a mulligan
+  N.send("mullvote 1");
+  await M.expect((l) => l === "oppmull 1", "M sees N vote (round 2)");
+  await sleep(300);
+  if (M.seen((l) => l === "mulligan") || N.seen((l) => l === "mulligan"))
+    fail("stale vote survived the finish -> wrongful mulligan next round");
+  else ok("finish clears the vote: stale vote cannot fire in the next round");
+  M.close();
+  N.close();
+
   [A, B, C, E, F, I, J].forEach((m) => m.close());
   bridges.forEach((b) => b.close());
   relay.close();

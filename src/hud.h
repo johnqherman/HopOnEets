@@ -57,7 +57,7 @@ static void draw_showdown() {
                                g_lastRoundWin > 0 ? green : red,
                                Color(0, 0, 0, 200), STYLE_BRADY);
     } else if (g_lastRoundTie) { // both DNF: same round number, fresh map -> mulligan
-      DrawTextCenteredOutlined(sw / 2, cy - 74, "MULLIGAN", FONT_BIG, yellow,
+      DrawTextCenteredOutlined(sw / 2, cy - 74, "MULLIGAN!", FONT_BIG, yellow,
                                Color(0, 0, 0, 200), STYLE_BRADY);
     }
     char rt[32];
@@ -185,6 +185,16 @@ static void draw_hud() {
         if (tw <= 0) tw = 12 * UI::fontPx(FONT_BIG) * 3 / 5; // Win fallback
         DrawTextOutlined(ScreenWidth() - pad - tw, 30, rc, FONT_BIG, // ~pad from right, matching ONLINE's pad from left
                          left < 20 ? warn : cyan, shadow, STYLE_BRADY);
+      }
+      // mulligan-vote status, just under the round timer (right-aligned to match)
+      if (g_matched && (g_oppMull || g_localMull)) {
+        const char *mv = g_oppMull ? "OPPONENT VOTED TO MULLIGAN"
+                                   : "YOU VOTED - WAITING FOR OPPONENT";
+        int mw = MeasureTextWidth(mv, FONT_NORMAL, STYLE_BRADY);
+        if (mw <= 0)
+          mw = (int)strlen(mv) * UI::fontPx(FONT_NORMAL) * 3 / 5;
+        DrawTextOutlined(ScreenWidth() - pad - mw, 62, mv, FONT_NORMAL,
+                         g_oppMull ? amber : cyan, shadow, STYLE_BRADY);
       }
     }
   }

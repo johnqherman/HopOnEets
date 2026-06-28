@@ -98,6 +98,9 @@ export function startBridge(opts: BridgeOpts): {
       case "forfeit":
         relay.send({ type: "forfeit" });
         break;
+      case "mullvote":
+        relay.send({ type: "mullvote", on: a[1] === "1" });
+        break;
     }
   }
 
@@ -178,6 +181,12 @@ export function startBridge(opts: BridgeOpts): {
             toMod(
               `rejoin ${m.opponent} ${m.ranked ? 1 : 0} ${m.you_wins} ${m.opp_wins}`,
             );
+            break;
+          case "opp_mulligan_vote":
+            toMod(`oppmull ${m.on ? 1 : 0}`);
+            break;
+          case "mulligan":
+            toMod("mulligan");
             break;
         }
       });

@@ -23,6 +23,8 @@ static void begin_build() {
   g_forcedStart = false;
   g_oppBuild.clear();
   g_oppBuildReady = false;
+  g_localMull = false; // votes are per-round; clear on every round load
+  g_oppMull = false;
   snprintf(g_status, sizeof(g_status), "build");
 }
 static void begin_sim(bool fromReset) {

@@ -20,6 +20,7 @@ interface Peer {
   wins: number;
   mulligans: number; // consecutive drawn rounds (resets on any decisive round)
   ready: boolean;
+  mullVote: boolean; // voted to replay this round; fires when both peers have voted
   noContest: boolean;
   ranked: boolean;
   roundTimer: ReturnType<typeof setTimeout> | null;
@@ -211,6 +212,7 @@ export function startRelay(
     A.wins = 0;
     A.mulligans = 0;
     A.ready = false;
+    A.mullVote = false;
     A.noContest = false;
     A.ranked = ranked;
     B.match = match;
@@ -219,6 +221,7 @@ export function startRelay(
     B.wins = 0;
     B.mulligans = 0;
     B.ready = false;
+    B.mullVote = false;
     B.noContest = false;
     B.ranked = ranked;
     const level = pickLevel(),
@@ -260,6 +263,8 @@ export function startRelay(
     if (!A || !B) return;
     A.ready = false;
     B.ready = false;
+    A.mullVote = false; // votes are per-round; never carry into the next
+    B.mullVote = false;
     A.finish = null;
     B.finish = null;
     const level = pickLevel(),
@@ -472,6 +477,7 @@ export function startRelay(
       wins: 0,
       mulligans: 0,
       ready: false,
+      mullVote: false,
       noContest: false,
       ranked: false,
       roundTimer: null,
@@ -659,6 +665,51 @@ export function startRelay(
           relay(conn, { type: "opp_finish", ...p.finish });
           maybeResult(conn);
           break;
+        case "mullvote": {
+          // mutual-consent round replay: echo my vote to the opponent, fire when both have voted
+          const q = p.opp ? peers.get(p.opp) : undefined;
+          if (!p.opp || !p.match || !q) break;
+          p.mullVote = !!m.on;
+          p.opp.send({ type: "opp_mulligan_vote", on: p.mullVote });
+          if (p.mullVote && q.mullVote) {
+            // both agreed -> replay this round; counts as a non-decisive round (shares the draw cap)
+            p.mullVote = false;
+            q.mullVote = false;
+            clearRoundTimer(p);
+            clearRoundTimer(q);
+            p.finish = null;
+            q.finish = null;
+            p.mulligans++;
+            q.mulligans++;
+            if (p.mulligans >= MAX_MULLIGANS) {
+              // too many non-decisive rounds in a row -> NO CONTEST (mirror maybeResult)
+              const nc = {
+                type: "series_over",
+                winner: "nocontest",
+                ranked: false,
+                r_old: 0,
+                r_new: 0,
+              };
+              conn.send({ ...nc, you_wins: p.wins, opp_wins: q.wins });
+              p.opp.send({ ...nc, you_wins: q.wins, opp_wins: p.wins });
+              log(
+                `no contest ${p.match}: ${MAX_MULLIGANS} non-decisive rounds (vote)`,
+              );
+              p.wins = q.wins = 0;
+              p.mulligans = q.mulligans = 0;
+              p.match = q.match = null;
+              p.opp = q.opp = null;
+            } else {
+              conn.send({ type: "mulligan" });
+              p.opp.send({ type: "mulligan" });
+              startRound(conn, p.opp, p.wins + q.wins + 1); // replay this round, fresh level+seed
+              log(
+                `mulligan ${p.match}: both voted -> replay round ${p.wins + q.wins + 1} (${p.mulligans}/${MAX_MULLIGANS})`,
+              );
+            }
+          }
+          break;
+        }
       }
     };
     // native mod speaks text over wss; browsers speak JSON. Decide from first frame: leading '{' =
