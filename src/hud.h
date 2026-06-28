@@ -153,7 +153,7 @@ static void draw_hud() {
       // who you're playing
       if (g_matched) {
         char on[96];
-        snprintf(on, sizeof(on), "ONLINE vs %s   %s", g_oppId.c_str(),
+        snprintf(on, sizeof(on), "ONLINE vs %s %s", g_oppId.c_str(),
                  g_ranked ? "(RANKED)" : "(CASUAL)");
         DrawTextOutlined(pad, 30, on, FONT_NORMAL, cyan, shadow, STYLE_BRADY);
       }
@@ -169,6 +169,7 @@ static void draw_hud() {
                          shadow, STYLE_BRADY);
       }
       // round number + the round's remaining time, flush to the right edge
+      int voteRightX = ScreenWidth() - pad; // fallback; set to the timer's real right edge below
       if (g_matched && g_roundCapSeconds > 0) {
         double left = (g_roundStart > 0)
                           ? (g_roundCapSeconds - (Time() - g_roundStart))
@@ -183,17 +184,20 @@ static void draw_hud() {
         // the template uses the widest digit (0), so trim a bit to sit flush right with typical digits.
         int tw = MeasureTextWidth("ROUND 0   0:00", FONT_BIG, STYLE_BRADY) - 36;
         if (tw <= 0) tw = 12 * UI::fontPx(FONT_BIG) * 3 / 5; // Win fallback
-        DrawTextOutlined(ScreenWidth() - pad - tw, 30, rc, FONT_BIG, // ~pad from right, matching ONLINE's pad from left
+        int tx = ScreenWidth() - pad - tw; // ~pad from right, matching ONLINE's pad from left
+        DrawTextOutlined(tx, 30, rc, FONT_BIG,
                          left < 20 ? warn : cyan, shadow, STYLE_BRADY);
+        int rcw = MeasureTextWidth(rc, FONT_BIG, STYLE_BRADY); // real right edge -> align the vote lines to it
+        if (rcw > 0) voteRightX = tx + rcw;
       }
-      // mulligan-vote status, just under the round timer (right-aligned to match)
+      // mulligan-vote status under the round timer, right edge aligned to the timer's right edge
       if (g_matched && (g_oppMull || g_localMull)) {
         const char *mv = g_oppMull ? "OPPONENT VOTED TO MULLIGAN"
-                                   : "YOU VOTED - WAITING FOR OPPONENT";
+                                   : "YOU VOTED TO MULLIGAN";
         int mw = MeasureTextWidth(mv, FONT_NORMAL, STYLE_BRADY);
         if (mw <= 0)
           mw = (int)strlen(mv) * UI::fontPx(FONT_NORMAL) * 3 / 5;
-        DrawTextOutlined(ScreenWidth() - pad - mw, 62, mv, FONT_NORMAL,
+        DrawTextOutlined(voteRightX - mw, 62, mv, FONT_NORMAL,
                          g_oppMull ? amber : cyan, shadow, STYLE_BRADY);
       }
     }
@@ -202,9 +206,12 @@ static void draw_hud() {
   // main menu, or the in-level pause screen. a loading screen (incl. the menu->match load, which can still
   // read as "main menu") suppresses the pill outright, so factor !World_IsLoading() across both.
   bool menu_surface = !World_IsLoading() && (World_IsInMainMenu() || World_IsPaused());
+  // mid-match the menu is a live overlay (Esc toggles g_menuOpen, no pause), so it can't ride on
+  // World_IsPaused() - which we force false during a match sim to keep determinism
+  bool match_menu = g_matched && in_level() && !World_IsLoading();
   if (!g_interRound) {
     if (g_menuOpen) {
-      if (menu_surface)
+      if (menu_surface || match_menu)
         draw_menu();
       else
         g_menuOpen = false;   // resuming the level (or a load screen) dismisses the menu
