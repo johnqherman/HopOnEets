@@ -83,10 +83,12 @@ static void draw_ghost(float dt) {
   else g_lagSmooth += (rawLag - g_lagSmooth) * GHOST_LAG_SMOOTH;
   float lagX = g_lagSmooth > GHOST_EXTRAP_CAP_TICKS ? GHOST_EXTRAP_CAP_TICKS : g_lagSmooth;
   float lagY = g_lagSmooth > GHOST_EXTRAP_CAP_TICKS_Y ? GHOST_EXTRAP_CAP_TICKS_Y : g_lagSmooth;
-  // linear extrapolation both axes (velocity is exact now). gravity (1/2*a*t^2) needs clean accel; revisit
-  // once the sender streams accel too — differencing even exact velocity still adds some Y noise.
+  // X is linear (constant horizontal velocity). Y adds gravity while airborne: y + vy*t + 1/2*g*t^2. the level
+  // gravity is identical on both clients (World_GetGravity), so it's exact and needs no extra streaming.
   float tx = g_liveX + g_liveVX * lagX;
-  float ty = g_liveY + g_liveVY * lagY;
+  bool airborne = (g_liveMotion == 'j' || g_liveMotion == 'f');
+  float gAccel = airborne ? World_GetGravity().y : 0.0f; // per tick^2 (engine integrates per fixed sim tick)
+  float ty = g_liveY + g_liveVY * lagY + 0.5f * gAccel * lagY * lagY;
   // slew-limit (not exponential ease): exponential easing trails a moving target by ~v/k, adding a constant
   // lag. instead sit EXACTLY on the prediction during normal motion (zero added lag) and only spread out a
   // big correction over a few frames. step scales with frame time so it's framerate-independent.
@@ -134,7 +136,7 @@ static void draw_ghost(float dt) {
     label = lbuf;
   }
   DrawTextOutlined(sx - (int)strlen(label) * 4, sy - 48, label, FONT_SMALL,
-                   Color(180, 220, 255, 255));
+                   Color(180, 220, 255, 255), Color(0, 0, 0, 200), STYLE_BRADY);
 }
 static void draw_opp_build() {
   if (!g_showGhost || g_oppBuild.empty())
