@@ -671,6 +671,7 @@ export function startRelay(
             r_old: pE.old,
             r_new: pE.neu,
             forfeit: true,
+            rank: p.ranked ? rankOf(p.id) : 0,
           });
           p.opp.send({
             type: "series_over",
@@ -681,6 +682,7 @@ export function startRelay(
             r_old: qE.old,
             r_new: qE.neu,
             forfeit: true,
+            rank: fq.ranked ? rankOf(fq.id) : 0,
           });
           log(`forfeit ${p.match}: ${p.name} forfeited to ${fq.name}`);
           p.wins = 0;
@@ -819,6 +821,7 @@ export function startRelay(
               r_old: qE.old,
               r_new: qE.neu,
               forfeit: true,
+              rank: qq.ranked ? rankOf(qq.id) : 0,
             });
             qq.opp = null;
             qq.match = null;
