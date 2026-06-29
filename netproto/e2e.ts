@@ -276,7 +276,7 @@ function fakeMod(port: number): Mod {
   if (rr) ok("round restarts after reconnect: " + rr);
   D2.close();
 
-  // ---- ranked Glicko-2 series: E beats F 2-0 -> rating moves off the 1500 base ----
+  // ---- ranked Glicko-2 series: E beats F 2-0 -> rating moves off the 500 seed ----
   E.send("hello erin");
   F.send("hello finn");
   E.send("queue");
@@ -295,20 +295,20 @@ function fakeMod(port: number): Mod {
     es &&
     ep[1] === "you" &&
     ep[4] === "1" &&
-    +ep[5] === 1500 &&
-    +ep[6] > 1500 &&
+    +ep[5] === 500 &&
+    +ep[6] > 500 &&
     ep[7] === "0"
   )
     ok(
-      "ranked win: Glicko 1500 -> " +
+      "ranked win: Glicko 500 -> " +
         ep[6] +
         " (up, ranked, not forfeit): " +
         es,
     );
   else if (es) fail("E series wrong: " + es);
   const fp = fs2 ? fs2.split(" ") : [];
-  if (fs2 && fp[1] === "opponent" && +fp[5] === 1500 && +fp[6] < 1500)
-    ok("ranked loss: Glicko 1500 -> " + fp[6] + " (down): " + fs2);
+  if (fs2 && fp[1] === "opponent" && +fp[5] === 500 && +fp[6] < 500)
+    ok("ranked loss: Glicko 500 -> " + fp[6] + " (down): " + fs2);
   else if (fs2) fail("F series wrong: " + fs2);
   // both freed -> re-queue; now test FORFEIT (server-authoritative, both get series)
   E.send("queue");

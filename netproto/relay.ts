@@ -39,21 +39,23 @@ const BEST_OF = 3,
   MAX_MULLIGANS = 3; // this many drawn (both-failed) rounds in a row -> NO CONTEST, neither wins
 
 // ---- Glicko-2 rating ladder (ranked only); persisted JSON on the relay host, keyed by uuid ----
-// per player: rating r (display, 1500 base), deviation rd (350), volatility vol (0.06). TAU bounds
+// per player: rating r (display, 500 seed), deviation rd (350), volatility vol (0.06). TAU bounds
 // volatility change. each ranked series = one rating period vs one opponent (lichess-style per-game).
 const RATING_FILE =
   process.env.RATING_FILE || process.env.ELO_FILE || "ratings.json";
-const R0 = 1500,
-  RD0 = 350,
+const SEED = 500, // new-player starting display rating (low, chess.com-style)
+  FLOOR = 100, // ratings never drop below this
+  CENTER = 1500, // Glicko-2 mu-transform center: fixed convention, never retune (stored ratings depend on it)
+  RD0 = 350, // new-player deviation: high -> big early swings -> climbs to true skill fast (provisional)
   VOL0 = 0.06,
   TAU = 0.5,
-  SCALE = 173.7178;
+  SCALE = 173.7178; // 400/ln(10): a 400-pt gap = 10:1 odds (classic Elo spread; unbounded, 3000+ reachable)
 interface Rating {
   r: number;
   rd: number;
   vol: number;
 }
-const defRating = (): Rating => ({ r: R0, rd: RD0, vol: VOL0 });
+const defRating = (): Rating => ({ r: SEED, rd: RD0, vol: VOL0 });
 let ratings: Record<string, Rating> = {};
 try {
   const raw = JSON.parse(fs.readFileSync(RATING_FILE, "utf8"));
@@ -73,15 +75,20 @@ function saveRatings(): void {
   }
 }
 // one Glicko-2 step for `p` after a game vs `opp` with score s (1 win / 0 loss); returns new state
-function glicko2(p: Rating, opp: Rating, s: number): Rating {
-  const mu = (p.r - R0) / SCALE,
+// one Glicko-2 rating period: `scores` = this player's per-round results (1 win / 0 loss) over the
+// series, all vs `opp` at its pre-series rating. Batched (not per-round), so it's order-independent.
+function glicko2(p: Rating, opp: Rating, scores: number[]): Rating {
+  const n = scores.length;
+  if (n === 0) return p;
+  const mu = (p.r - CENTER) / SCALE,
     phi = p.rd / SCALE;
-  const muJ = (opp.r - R0) / SCALE,
+  const muJ = (opp.r - CENTER) / SCALE,
     phiJ = opp.rd / SCALE;
   const g = 1 / Math.sqrt(1 + (3 * phiJ * phiJ) / (Math.PI * Math.PI));
   const e = 1 / (1 + Math.exp(-g * (mu - muJ)));
-  const v = 1 / (g * g * e * (1 - e));
-  const delta = v * g * (s - e);
+  const v = 1 / (n * g * g * e * (1 - e));
+  const sum = g * scores.reduce((acc, s) => acc + (s - e), 0); // sum of g*(s - E) over the period
+  const delta = v * sum;
   // volatility: solve Glickman step 5 via the Illinois (regula-falsi) iteration, bounded by TAU
   const a = Math.log(p.vol * p.vol);
   const f = (x: number) =>
@@ -112,15 +119,26 @@ function glicko2(p: Rating, opp: Rating, s: number): Rating {
   const vol = Math.exp(A / 2);
   const phiStar = Math.sqrt(phi * phi + vol * vol);
   const phiNew = 1 / Math.sqrt(1 / (phiStar * phiStar) + 1 / v);
-  const muNew = mu + phiNew * phiNew * g * (s - e);
-  return { r: muNew * SCALE + R0, rd: phiNew * SCALE, vol };
+  const muNew = mu + phiNew * phiNew * sum;
+  return { r: Math.max(FLOOR, muNew * SCALE + CENTER), rd: phiNew * SCALE, vol };
 }
-// apply a ranked series result + persist; returns both players' display ratings old->new (rounded)
-function applyRating(winnerId: string, loserId: string) {
+// apply a ranked series result + persist; returns both players' display ratings old->new (rounded).
+// one Glicko step PER ROUND (lichess-style per-game): a 2-0 moves more than a 2-1 (the dropped round
+// claws some back) and opponent rating counts on every round. forfeit/dropout pass no counts -> a
+// single decisive 1-0 step.
+function applyRating(
+  winnerId: string,
+  loserId: string,
+  winnerWins = 1,
+  loserWins = 0,
+) {
   const wOld = getRating(winnerId),
     lOld = getRating(loserId);
-  const wNew = glicko2(wOld, lOld, 1),
-    lNew = glicko2(lOld, wOld, 0);
+  // each player's round results vs the SAME pre-series opponent rating
+  const wScores = [...Array(winnerWins).fill(1), ...Array(loserWins).fill(0)];
+  const lScores = [...Array(winnerWins).fill(0), ...Array(loserWins).fill(1)];
+  const wNew = glicko2(wOld, lOld, wScores),
+    lNew = glicko2(lOld, wOld, lScores);
   ratings[winnerId] = wNew;
   ratings[loserId] = lNew;
   saveRatings();
@@ -402,7 +420,9 @@ export function startRelay(
       let pE = { old: 0, neu: 0 },
         qE = { old: 0, neu: 0 };
       if (p.ranked) {
-        const r = pWon ? applyRating(p.id, q.id) : applyRating(q.id, p.id);
+        const r = pWon
+          ? applyRating(p.id, q.id, p.wins, q.wins)
+          : applyRating(q.id, p.id, q.wins, p.wins);
         pE = pWon ? { old: r.wOld, neu: r.wNew } : { old: r.lOld, neu: r.lNew };
         qE = pWon ? { old: r.lOld, neu: r.lNew } : { old: r.wOld, neu: r.wNew };
         log(
