@@ -140,6 +140,19 @@ static void match_update() {
     }
     return;
   }
+  // anti-cheat: leaving the match level by ANY route (main menu, CHOOSE LEVEL, LOAD REPLAY,
+  // PUZZLE MAP) must forfeit - never a free escape from a loss. The win-screen and between-round
+  // loads returned above, so reaching here while matched + no-longer-in-level + not mid-load
+  // means the player bailed out themselves. Edge-triggered so it fires once.
+  static bool s_inMatchLevel = false;
+  bool inLvl = in_level();
+  if (g_matched && s_inMatchLevel && !inLvl && !World_IsLoading()) {
+    s_inMatchLevel = false;
+    forfeit_match();
+    g_phase = IDLE;
+    return;
+  }
+  s_inMatchLevel = g_matched && inLvl;
   // win-effect timer (Builder+0x2fa4) re-shows victory dialog ~1s after win, so
   // re-dismiss every frame
   if (g_interRound && g_matched) {
@@ -186,6 +199,14 @@ static void match_update() {
   if (g_matched) {
     set_match_buttons_hidden(true);
     g_buttonsHidden = true;
+    // the vanilla Esc menu (PuzzleMapDialog: CHOOSE LEVEL / LOAD REPLAY / PUZZLE MAP / QUIT) is a
+    // modal - stomp it every frame so it can't stay open mid-match; the HOE overlay replaces it.
+    // Esc is swallowed by the loader, but the on-screen HUD MenuButton still opens that modal; treat
+    // its appearance as "player wants the menu" and raise our overlay instead. Skip between rounds,
+    // where the active modal is the victory dialog (already stomped above), not a player request.
+    if (!g_interRound && !cine && Menu_ModalActive())
+      g_menuOpen = true;
+    Creator_StopAllModals(World_GetCreator());
   } else if (g_buttonsHidden) {
     set_match_buttons_hidden(false);
     g_buttonsHidden = false;

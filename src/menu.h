@@ -1,4 +1,5 @@
 #pragma once
+#include "badge.h"
 #include "state.h"
 #include "net.h"
 
@@ -14,7 +15,15 @@ static void start_queue(bool ranked) {
 static void draw_menu() {
   UI::SetClickSound("GUI Click 1");
   UI::SetHoverSound("GUI MouseOver");
-  UI::Begin(42, 150, 360, "HOP ON EETS");   // top-left aligned with the pill
+  // in a match the overlay sits centered (where the vanilla Esc menu would be); in the lobby it
+  // stays top-left, aligned with the MODS pill. lastH = previous frame's measured panel height.
+  int pw = 360;
+  if (g_matched) {
+    int ph = UI::S().lastH;
+    UI::Begin((ScreenWidth() - pw) / 2, (ScreenHeight() - ph) / 2, pw, "HOP ON EETS");
+  } else {
+    UI::Begin(42, 150, pw, "HOP ON EETS");
+  }
   if (UI::CloseButton())
     g_menuOpen = false;
 
@@ -38,11 +47,16 @@ static void draw_menu() {
     } else {
       char nm[64];
       if (g_myRating > 0)
-        snprintf(nm, sizeof(nm), "User: %s (%d)", g_playerId.c_str(),
-                 g_myRating);
+        snprintf(nm, sizeof(nm), "%s (%d)", g_playerId.c_str(), g_myRating);
       else
-        snprintf(nm, sizeof(nm), "User: %s", g_playerId.c_str());
-      UI::Label(nm);
+        snprintf(nm, sizeof(nm), "%s", g_playerId.c_str());
+      // name row with a leading ladder-rank badge (mirrors UI::Label's layout)
+      UI::State &st = UI::S();
+      int rowH = st.rowh - 2, ty = UI::centerY(st.cy, rowH, FONT_SMALL);
+      int nx = st.px + st.pad + draw_rank_badge_left(st.px + st.pad, ty, g_myRank);
+      DrawTextOutlined(nx, ty, nm, FONT_SMALL, UI::col::label(), Color(0, 0, 0, 200),
+                       STYLE_BRADY);
+      st.cy += rowH;
       if (UI::Button("Edit name")) {
         g_nameEntry = true;
         g_nameBuf = g_playerId;
@@ -172,7 +186,11 @@ static void mod_on_key(int key, int mods, int down) {
   // in a match, Esc toggles the overlay menu WITHOUT pausing - the engine pause would freeze the
   // deterministic sim and desync vs the opponent (match_update force-clears the pause flag)
   if (key == EKEY_ESCAPE && g_matched && in_level()) {
-    g_menuOpen = !g_menuOpen;
+    static double lastToggle = 0.0; // cooldown so a held Esc (key-repeat) can't flicker the overlay
+    if (Time() - lastToggle >= 0.30) {
+      lastToggle = Time();
+      g_menuOpen = !g_menuOpen;
+    }
     return;
   }
   if (g_nameEntry) {

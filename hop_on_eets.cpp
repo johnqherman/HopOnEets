@@ -38,6 +38,8 @@ extern "C" void EetsMod_OnKey(int key, int mods, int down) {
 }
 
 extern "C" void EetsMod_Update() {
+  // in a match the HOE overlay owns Esc; keep the engine from seeing it (no vanilla pause/menu/sound)
+  Eets::SetEscapeSwallow(g_matched && in_level());
   net_poll();
   net_reconnect_tick(); // relay holds the match ~20s across a mid-match drop
   net_queue_tick();     // re-assert/reconnect while waiting so long queuers don't silently fall out
