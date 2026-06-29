@@ -10,6 +10,17 @@ static void net_sendline(const std::string &s);
                                            const char *plat);
 [[maybe_unused]] static void note_local_hash(long tick, uint64_t h);
 
+// start a pre-load card (1 = face-off, 2 = between-round) and defer the level load until it ends,
+// so our screens show BEFORE the game's loading screen (load fires from match_update)
+static void begin_showdown(int kind, int roundNo) {
+  g_showdownKind = kind;
+  g_showdownRound = roundNo;
+  g_showdownUntil =
+      Time() + (kind == 1 ? SHOWDOWN_SECS_MATCH : SHOWDOWN_SECS_ROUND);
+  PlaySound(kind == 1 ? "Fanfare" : "Level Complete");
+  g_loadAfterShowdown = true;
+}
+
 // ---- shared line protocol ----
 static void net_handle(const std::string &ln) {
   char a[40] = {0}, b[40] = {0};
@@ -71,8 +82,10 @@ static void net_handle(const std::string &ln) {
     }
   } else if (sscanf(ln.c_str(), "oh %ld %llx %39s", &t, &hh, a) == 3)
     note_opp_hash(t, (uint64_t)hh, a);
-  else if (sscanf(ln.c_str(), "rating %d", &iv) == 1)
+  else if (sscanf(ln.c_str(), "rating %d %d", &iv, &rk) >= 1) {
     g_myRating = iv;
+    g_myRank = rk; // 2nd token; old single-token lines leave rk at its 0 default
+  }
   else if (strncmp(ln.c_str(), "nocontest", 9) == 0) {
     g_noContest = true;
     long nt = -1;
@@ -90,9 +103,10 @@ static void net_handle(const std::string &ln) {
     }
   } else if (strncmp(ln.c_str(), "obend", 5) == 0)
     g_oppBuildReady = true;
-  // match <selfId> <oppId> <ranked> <levelIndex> <seed> <myRating> <oppRating>
-  else if (sscanf(ln.c_str(), "match %39s %39s %d %d %u %d %d", a, b, &rk, &lv,
-                  &sd, &iv, &g_oppRating) >= 2) {
+  // match <selfId> <oppId> <ranked> <levelIndex> <seed> <myRating> <oppRating> <myRank> <oppRank>
+  else if ((g_myRank = g_oppRank = 0, // clear stale; short/old lines leave both at 0
+            sscanf(ln.c_str(), "match %39s %39s %d %d %u %d %d %d %d", a, b, &rk,
+                   &lv, &sd, &iv, &g_oppRating, &g_myRank, &g_oppRank)) >= 2) {
     g_matched = true;
     g_queueing = false;   // matched -> leave the searching state
     g_hostCode[0] = 0;    // matched -> the host code is spent
@@ -122,12 +136,7 @@ static void net_handle(const std::string &ln) {
     snprintf(g_netMsg, sizeof(g_netMsg), "matched vs %s%s", b,
              g_ranked ? " [ranked]" : "");
     g_menuOpen = false;
-    g_pendingShowdown = 1;
-    g_showdownRound = 1;
-    if (g_autoLoad) {
-      load_match_level();
-      net_sendline("ready");
-    }
+    begin_showdown(1, 1); // face-off card first; level loads when it ends
   } else if (sscanf(ln.c_str(), "round %d %d %u", &iv, &lv, &sd) ==
              3) { // round <n> <levelIndex> <seed>
     g_levelIndex = lv;
@@ -136,13 +145,8 @@ static void net_handle(const std::string &ln) {
     g_liveValid = false;
     g_oppBuild.clear();
     g_oppBuildReady = false;
-    snprintf(g_netMsg, sizeof(g_netMsg), "round %d - loading level", iv);
-    g_pendingShowdown = 2;
-    g_showdownRound = iv;
-    if (g_autoLoad) {
-      load_match_level();
-      net_sendline("ready");
-    }
+    snprintf(g_netMsg, sizeof(g_netMsg), "round %d", iv);
+    begin_showdown(2, iv); // between-round card first; level loads when it ends
   } else if (sscanf(ln.c_str(), "oppmull %d", &iv) == 1) {
     g_oppMull = (iv != 0); // opponent's mulligan vote -> HUD + menu indicator
   } else if (strncmp(ln.c_str(), "mulligan", 8) == 0) {
@@ -162,13 +166,6 @@ static void net_handle(const std::string &ln) {
     g_roundStart =
         0.0; // cap clock idle during build; starts at first Go (begin_sim)
     snprintf(g_netMsg, sizeof(g_netMsg), "build %ds (synced)", g_buildSeconds);
-    if (g_pendingShowdown) { // level loaded, draws safe: fire showdown beat
-      g_showdownKind = g_pendingShowdown;
-      g_pendingShowdown = 0;
-      g_showdownUntil = Time() + (g_showdownKind == 1 ? SHOWDOWN_SECS_MATCH
-                                                      : SHOWDOWN_SECS_ROUND);
-      PlaySound(g_showdownKind == 1 ? "Fanfare" : "Level Complete");
-    }
   } else if (sscanf(ln.c_str(), "code %39s", a) == 1) {
     snprintf(g_hostCode, sizeof(g_hostCode), "%s", a);
     snprintf(g_netMsg, sizeof(g_netMsg), "hosting - code %s", a);
@@ -189,12 +186,12 @@ static void net_handle(const std::string &ln) {
     snprintf(g_roundMsg, sizeof(g_roundMsg),
              "ONLINE round: %s by %s  series %d-%d", w, r, yw, ow);
     // series <winner> <youWins> <ghostWins> <ranked> <ratingOld> <ratingNew>
-    // <forfeit>
+    // <forfeit> <rank>
   } else if (strncmp(ln.c_str(), "series ", 7) == 0) {
     char w[16] = {0};
-    int yw = 0, ow = 0, rk = 0, eo = 0, en = 0, ff = 0;
-    sscanf(ln.c_str() + 7, "%15s %d %d %d %d %d %d", w, &yw, &ow, &rk, &eo, &en,
-           &ff);
+    int yw = 0, ow = 0, rk = 0, eo = 0, en = 0, ff = 0, rnk = 0;
+    sscanf(ln.c_str() + 7, "%15s %d %d %d %d %d %d %d", w, &yw, &ow, &rk, &eo,
+           &en, &ff, &rnk);
     g_youWins = yw;
     g_ghostWins = ow;
     g_interRound = false;
@@ -206,8 +203,11 @@ static void net_handle(const std::string &ln) {
     g_ratingNew = en;
     if (g_ratingRanked && en > 0)
       g_myRating = en;
+    if (g_ratingRanked)
+      g_myRank = rnk; // refreshed ladder rank after the series
+
     g_showdownKind = 0;
-    g_pendingShowdown = 0;
+    g_loadAfterShowdown = false;
     g_winShow = true;
     g_winStart = Time();
     g_winUntil = Time() + WINSCREEN_SECS;

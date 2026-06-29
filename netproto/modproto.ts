@@ -62,7 +62,7 @@ export function modLineToMsg(line: string, fallbackName = "anon"): any | null {
 export function msgToModLine(m: any): string | null {
   switch (m.type) {
     case "match_config":
-      return `match ${m.match_id} ${m.opponent} ${m.ranked ? 1 : 0} ${m.level ?? -1} ${m.seed ?? 0} ${m.self_r ?? 0} ${m.opp_r ?? 0}`;
+      return `match ${m.match_id} ${m.opponent} ${m.ranked ? 1 : 0} ${m.level ?? -1} ${m.seed ?? 0} ${m.self_r ?? 0} ${m.opp_r ?? 0} ${m.self_rank ?? 0} ${m.opp_rank ?? 0}`;
     case "countdown":
       return `countdown ${m.seconds} ${m.cap ?? 0}`;
     case "round":
@@ -86,9 +86,9 @@ export function msgToModLine(m: any): string | null {
     case "result":
       return `result ${m.winner} ${m.reason} ${m.you_wins} ${m.opp_wins}`;
     case "rating":
-      return `rating ${m.value ?? 0}`;
+      return `rating ${m.value ?? 0} ${m.rank ?? 0}`;
     case "series_over":
-      return `series ${m.winner} ${m.you_wins} ${m.opp_wins} ${m.ranked ? 1 : 0} ${m.r_old ?? 0} ${m.r_new ?? 0} ${m.forfeit ? 1 : 0}`;
+      return `series ${m.winner} ${m.you_wins} ${m.opp_wins} ${m.ranked ? 1 : 0} ${m.r_old ?? 0} ${m.r_new ?? 0} ${m.forfeit ? 1 : 0} ${m.rank ?? 0}`;
     case "opponent_left":
       return "oppleft";
     case "opponent_dropped":

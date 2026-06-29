@@ -67,6 +67,14 @@ try {
 }
 const getRating = (id: string): Rating => ratings[id] ?? defRating();
 const displayR = (id: string): number => Math.round(getRating(id).r);
+// 1-based position in the rating ladder; 0 = unranked / outside the top 50
+function rankOf(id: string): number {
+  const me = getRating(id).r;
+  let better = 0;
+  for (const k in ratings) if (ratings[k].r > me) better++;
+  const rank = better + 1;
+  return rank <= 50 ? rank : 0;
+}
 function saveRatings(): void {
   try {
     fs.writeFileSync(RATING_FILE, JSON.stringify(ratings, null, 2));
@@ -249,6 +257,8 @@ export function startRelay(
       oppName: string,
       selfR: number,
       oppR: number,
+      selfRank: number,
+      oppRank: number,
     ) => ({
       type: "match_config",
       match_id: match,
@@ -262,11 +272,15 @@ export function startRelay(
       opponent: oppName,
       self_r: selfR,
       opp_r: oppR,
+      self_rank: selfRank,
+      opp_rank: oppRank,
     });
     const eA = ranked ? displayR(A.id) : 0,
       eB = ranked ? displayR(B.id) : 0;
-    a.send(cfg(A.name, B.name, eA, eB)); // display names + rating; uuid stays server-side
-    b.send(cfg(B.name, A.name, eB, eA));
+    const kA = ranked ? rankOf(A.id) : 0,
+      kB = ranked ? rankOf(B.id) : 0;
+    a.send(cfg(A.name, B.name, eA, eB, kA, kB)); // display names + rating + ladder rank; uuid stays server-side
+    b.send(cfg(B.name, A.name, eB, eA, kB, kA));
     // countdown sent once both report `ready`; see ready handler
     log(
       `match ${match} (${ranked ? "ranked" : "private"}): ${A.name} vs ${B.name} (round 1 level ${level})`,
@@ -437,6 +451,7 @@ export function startRelay(
         ranked: p.ranked,
         r_old: pE.old,
         r_new: pE.neu,
+        rank: p.ranked ? rankOf(p.id) : 0, // recomputed after applyRating -> reflects new standing
       });
       p.opp.send({
         type: "series_over",
@@ -446,6 +461,7 @@ export function startRelay(
         ranked: p.ranked,
         r_old: qE.old,
         r_new: qE.neu,
+        rank: p.ranked ? rankOf(q.id) : 0,
       });
       log(
         `series over ${p.match}: ${pWon ? p.name : q.name} (best of ${BEST_OF})`,
@@ -538,7 +554,7 @@ export function startRelay(
             );
             startRound(conn, h.oppConn, p.wins + q.wins + 1); // restart current round for both
           } else {
-            conn.send({ type: "rating", value: displayR(p.id) });
+            conn.send({ type: "rating", value: displayR(p.id), rank: rankOf(p.id) });
           }
           break;
         }

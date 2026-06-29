@@ -1,6 +1,47 @@
 #pragma once
 #include "state.h"
 
+// ladder-rank badge tier color: gold #1, silver #2-10, bronze #11-50; false = no badge
+static bool rankTier(int rank, Color &bg, Color &fg) {
+  if (rank <= 0)
+    return false;
+  fg = Color(40, 30, 10, 255); // dark text reads on all three metals
+  if (rank == 1)
+    bg = Color(255, 210, 40, 255); // gold
+  else if (rank <= 10)
+    bg = Color(200, 205, 215, 255); // silver
+  else if (rank <= 50)
+    bg = Color(205, 130, 70, 255); // bronze
+  else
+    return false;
+  return true;
+}
+
+// little "#N" pill drawn just left of a horizontally-centered name. nameCx/nameW =
+// the name's center x and measured pixel width; textTopY = the name's text-top y.
+static void draw_rank_badge(int nameCx, int nameW, int textTopY, int rank) {
+  Color bg, fg;
+  if (!rankTier(rank, bg, fg))
+    return;
+  char b[8];
+  snprintf(b, sizeof(b), "#%d", rank);
+  int fpx = UI::fontPx(FONT_NORMAL);
+  int tw = MeasureTextWidth(b, FONT_NORMAL, STYLE_BRADY);
+  if (tw <= 0) { // Win fallback (engine measure unavailable)
+    int n = 0;
+    while (b[n])
+      n++;
+    tw = n * fpx * 3 / 5;
+  }
+  int padX = 8, padY = 3, gap = 10;
+  int bw = tw + 2 * padX, bh = fpx + 2 * padY;
+  int bx = (nameCx - nameW / 2) - gap - bw; // right edge sits `gap` left of the name
+  int by = textTopY - padY;
+  UI::FillRoundRect(bx, by, bw, bh, bh / 2, bg); // r = half height -> pill ends
+  DrawTextCentered(bx + bw / 2, UI::centerY(by, bh, FONT_NORMAL), b, FONT_NORMAL,
+                   fg, STYLE_BRADY);
+}
+
 // showdown overlay: VS face-off (match start) or ROUND N card; self-clears when
 // g_showdownUntil elapses
 static void draw_showdown() {
@@ -14,10 +55,17 @@ static void draw_showdown() {
   int sw = ScreenWidth(), sh = ScreenHeight(), cy = sh / 2;
   GFX_ResetViewOffset(); // screen space; else in-level camera offset shifts
                          // sprites
-  FillRect(0, 0, sw, sh, Color(14, 12, 26, 245));
+  // cinematic intro over the first 0.4s: dark bg fades up, black bars slide in
+  // from the top/bottom edges (easeOutCubic). time-based -> framerate-independent.
+  double dur = (g_showdownKind == 1) ? SHOWDOWN_SECS_MATCH : SHOWDOWN_SECS_ROUND;
+  double it = (now - (g_showdownUntil - dur)) / 0.4;
+  if (it < 0) it = 0;
+  if (it > 1) it = 1;
+  double iv = 1 - it, ie = 1 - iv * iv * iv; // easeOutCubic
+  FillRect(0, 0, sw, sh, Color(14, 12, 26, (unsigned char)(245 * ie)));
   int barH = (int)(sh * 0.18);
-  FillRect(0, 0, sw, barH, Color(0, 0, 0, 255));
-  FillRect(0, sh - barH, sw, barH, Color(0, 0, 0, 255));
+  FillRect(0, (int)(barH * (ie - 1)), sw, barH, Color(0, 0, 0, 255)); // top: -barH -> 0
+  FillRect(0, sh - (int)(barH * ie), sw, barH, Color(0, 0, 0, 255));  // bottom: sh -> sh-barH
   Color yellow(255, 232, 40, 255), white(255, 255, 255, 255),
       green(120, 255, 120, 255), red(255, 120, 90, 255);
   if (g_showdownKind == 1) { // match start
@@ -25,9 +73,17 @@ static void draw_showdown() {
         (int)(sh *
               0.55); // each Eets ~55% screen height (fit-to-height, any res)
     int lcx = (int)(sw * 0.17), rcx = (int)(sw * 0.83), eetsY = cy + 24;
-    DrawAnimFrozenFit(g_ghostAnim.c_str(), lcx, eetsY, th, white, false);
-    DrawAnimFrozenFit(g_ghostAnim.c_str(), rcx, eetsY, th, white,
-                      true); // mirrored
+    // fly-in: each Eets enters from its own edge and eases into place over the first 0.7s.
+    // time-based (not per-frame) so it's smooth + framerate-independent; easeOutCubic = fast in, soft settle
+    double t = (now - (g_showdownUntil - SHOWDOWN_SECS_MATCH)) / 0.7;
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+    double v = 1 - t, e = 1 - v * v * v;
+    int lx = (int)(-th + (lcx + th) * e);           // off the left edge -> lcx
+    int rx = (int)((sw + th) + (rcx - sw - th) * e); // off the right edge -> rcx
+    // crisp 512^2 vector art; faces right natively -> mirror the right one so they face each other
+    DrawImageFit("Eets.png", lx, eetsY, th, white, false);
+    DrawImageFit("Eets.png", rx, eetsY, th, white, true);
     DrawTextCenteredOutlined(sw / 2, cy - 24, "VS", FONT_HUGE, yellow,
                              Color(0, 0, 0, 200), STYLE_BRADY);
     int nameY = eetsY - th / 2 - 26;
@@ -40,10 +96,15 @@ static void draw_showdown() {
       snprintf(rn, sizeof(rn), "%s (%d)", g_oppId.c_str(), g_oppRating);
     else
       snprintf(rn, sizeof(rn), "%s", g_oppId.c_str());
-    DrawTextCenteredOutlined(lcx, nameY, ln, FONT_BIG, Color(150, 220, 255, 255),
+    DrawTextCenteredOutlined(lx, nameY, ln, FONT_BIG, Color(150, 220, 255, 255),
                              Color(0, 0, 0, 200), STYLE_BRADY);
-    DrawTextCenteredOutlined(rcx, nameY, rn, FONT_BIG, Color(255, 160, 120, 255),
+    DrawTextCenteredOutlined(rx, nameY, rn, FONT_BIG, Color(255, 160, 120, 255),
                              Color(0, 0, 0, 200), STYLE_BRADY);
+    // ladder-rank badge before each name (ranked matches only; relay sends 0 otherwise)
+    draw_rank_badge(lx, MeasureTextWidth(ln, FONT_BIG, STYLE_BRADY), nameY,
+                    g_ranked ? g_myRank : 0);
+    draw_rank_badge(rx, MeasureTextWidth(rn, FONT_BIG, STYLE_BRADY), nameY,
+                    g_ranked ? g_oppRank : 0);
   } else { // between rounds
     if (g_lastRoundWin != 0) {
       int prev = g_showdownRound -
@@ -71,7 +132,11 @@ static void draw_showdown() {
 static void draw_winscreen() {
   int sw = ScreenWidth(), sh = ScreenHeight(), cy = sh / 2;
   GFX_ResetViewOffset();
-  FillRect(0, 0, sw, sh, Color(14, 12, 26, 252));
+  double it = (Time() - g_winStart) / 0.5; // dark bg fades up over the first 0.5s
+  if (it < 0) it = 0;
+  if (it > 1) it = 1;
+  double iv = 1 - it, ie = 1 - iv * iv * iv; // easeOutCubic
+  FillRect(0, 0, sw, sh, Color(14, 12, 26, (unsigned char)(252 * ie)));
   Color green(120, 255, 120, 255), red(255, 90, 80, 255),
       white(245, 245, 255, 255), grey(180, 180, 200, 255),
       gold(230, 220, 120, 255);
@@ -119,6 +184,10 @@ static void draw_hud() {
     draw_winscreen();
     return;
   } // win screen owns the frame
+  if (g_showdownKind != 0 && Time() < g_showdownUntil) {
+    draw_showdown();
+    return;
+  } // custom card owns the screen - drawn over the menu / old level, before the load
   if (g_matched && (!net_up() || g_oppDropped)) {
     GFX_ResetViewOffset();
     char b[64];
@@ -136,10 +205,6 @@ static void draw_hud() {
   }
   if (in_level()) {
     bool inMatch = (g_matched || g_matchActive);
-    if (g_showdownKind != 0 && Time() < g_showdownUntil) {
-      draw_showdown();
-      return;
-    } // cinematic owns the screen
     if (!g_interRound) {
       float dt = (float)DeltaTime();
       draw_ghost(dt);
