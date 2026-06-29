@@ -1,45 +1,23 @@
 #pragma once
+#include "badge.h"
 #include "state.h"
 
-// ladder-rank badge tier color: gold #1, silver #2-10, bronze #11-50; false = no badge
-static bool rankTier(int rank, Color &bg, Color &fg) {
-  if (rank <= 0)
-    return false;
-  fg = Color(40, 30, 10, 255); // dark text reads on all three metals
-  if (rank == 1)
-    bg = Color(255, 210, 40, 255); // gold
-  else if (rank <= 10)
-    bg = Color(200, 205, 215, 255); // silver
-  else if (rank <= 50)
-    bg = Color(205, 130, 70, 255); // bronze
-  else
-    return false;
-  return true;
-}
-
-// little "#N" pill drawn just left of a horizontally-centered name. nameCx/nameW =
-// the name's center x and measured pixel width; textTopY = the name's text-top y.
-static void draw_rank_badge(int nameCx, int nameW, int textTopY, int rank) {
-  Color bg, fg;
-  if (!rankTier(rank, bg, fg))
+// big centered headline, crisp at any size. The engine caches glyphs per size (FontInfo+8 is the
+// cache key) and advances from the cached px-sized metrics, so a single centered DrawTextPx draws
+// AND spaces correctly at px - no per-glyph fiddling. One offset pass = drop shadow for depth.
+// topY = text top (matches the other text helpers). Falls back to the enum path if px is unavailable.
+static void DrawBigHeadline(int cx, int topY, const char *text, int px, Color fill,
+                            Color shadow = Color(0, 0, 0, 220), int style = STYLE_BRADY) {
+  // hard ceiling: the engine rasterizes each size into a fixed 512x256 glyph atlas (Brady at px*1.4),
+  // so past ~mid-40s px the alphabet overflows the atlas -> garbled bitmaps + zeroed advances (letters
+  // pile up). Clamp to stay just above FONT_HUGE but inside the atlas.
+  if (px > 46)
+    px = 46;
+  if (!DrawTextPx(cx + 3, topY + 3, text, px, shadow, true, style)) {
+    DrawTextCenteredOutlined(cx, topY, text, FONT_HUGE, fill, shadow, style); // px unavailable (Win)
     return;
-  char b[8];
-  snprintf(b, sizeof(b), "#%d", rank);
-  int fpx = UI::fontPx(FONT_NORMAL);
-  int tw = MeasureTextWidth(b, FONT_NORMAL, STYLE_BRADY);
-  if (tw <= 0) { // Win fallback (engine measure unavailable)
-    int n = 0;
-    while (b[n])
-      n++;
-    tw = n * fpx * 3 / 5;
   }
-  int padX = 8, padY = 3, gap = 10;
-  int bw = tw + 2 * padX, bh = fpx + 2 * padY;
-  int bx = (nameCx - nameW / 2) - gap - bw; // right edge sits `gap` left of the name
-  int by = textTopY - padY;
-  UI::FillRoundRect(bx, by, bw, bh, bh / 2, bg); // r = half height -> pill ends
-  DrawTextCentered(bx + bw / 2, UI::centerY(by, bh, FONT_NORMAL), b, FONT_NORMAL,
-                   fg, STYLE_BRADY);
+  DrawTextPx(cx, topY, text, px, fill, true, style);
 }
 
 // showdown overlay: VS face-off (match start) or ROUND N card; self-clears when
@@ -84,8 +62,7 @@ static void draw_showdown() {
     // crisp 512^2 vector art; faces right natively -> mirror the right one so they face each other
     DrawImageFit("Eets.png", lx, eetsY, th, white, false);
     DrawImageFit("Eets.png", rx, eetsY, th, white, true);
-    DrawTextCenteredOutlined(sw / 2, cy - 24, "VS", FONT_HUGE, yellow,
-                             Color(0, 0, 0, 200), STYLE_BRADY);
+    DrawBigHeadline(sw / 2, cy - 29, "VS", 44, yellow);
     int nameY = eetsY - th / 2 - 26;
     char ln[48], rn[48];
     if (g_ranked && g_myRating > 0)
@@ -96,15 +73,9 @@ static void draw_showdown() {
       snprintf(rn, sizeof(rn), "%s (%d)", g_oppId.c_str(), g_oppRating);
     else
       snprintf(rn, sizeof(rn), "%s", g_oppId.c_str());
-    DrawTextCenteredOutlined(lx, nameY, ln, FONT_BIG, Color(150, 220, 255, 255),
-                             Color(0, 0, 0, 200), STYLE_BRADY);
-    DrawTextCenteredOutlined(rx, nameY, rn, FONT_BIG, Color(255, 160, 120, 255),
-                             Color(0, 0, 0, 200), STYLE_BRADY);
-    // ladder-rank badge before each name (ranked matches only; relay sends 0 otherwise)
-    draw_rank_badge(lx, MeasureTextWidth(ln, FONT_BIG, STYLE_BRADY), nameY,
-                    g_ranked ? g_myRank : 0);
-    draw_rank_badge(rx, MeasureTextWidth(rn, FONT_BIG, STYLE_BRADY), nameY,
-                    g_ranked ? g_oppRank : 0);
+    // rank pill + name drawn as one centered group so the badge hugs the name (ranked only)
+    draw_name_with_badge(lx, nameY, ln, g_ranked ? g_myRank : 0, Color(150, 220, 255, 255));
+    draw_name_with_badge(rx, nameY, rn, g_ranked ? g_oppRank : 0, Color(255, 160, 120, 255));
   } else { // between rounds
     if (g_lastRoundWin != 0) {
       int prev = g_showdownRound -
@@ -114,17 +85,14 @@ static void draw_showdown() {
         snprintf(wl, sizeof(wl), "You won round %d", prev);
       else
         snprintf(wl, sizeof(wl), "%s won round %d", g_oppId.c_str(), prev);
-      DrawTextCenteredOutlined(sw / 2, cy - 74, wl, FONT_BIG,
-                               g_lastRoundWin > 0 ? green : red,
-                               Color(0, 0, 0, 200), STYLE_BRADY);
+      DrawBigHeadline(sw / 2, cy - 104, wl, 34,
+                      g_lastRoundWin > 0 ? green : red);
     } else if (g_lastRoundTie) { // both DNF: same round number, fresh map -> mulligan
-      DrawTextCenteredOutlined(sw / 2, cy - 74, "MULLIGAN!", FONT_BIG, yellow,
-                               Color(0, 0, 0, 200), STYLE_BRADY);
+      DrawBigHeadline(sw / 2, cy - 104, "MULLIGAN!", 34, yellow);
     }
     char rt[32];
     snprintf(rt, sizeof(rt), "ROUND %d", g_showdownRound);
-    DrawTextCenteredOutlined(sw / 2, cy - 24, rt, FONT_HUGE, yellow,
-                             Color(0, 0, 0, 200), STYLE_BRADY);
+    DrawBigHeadline(sw / 2, cy - 29, rt, 44, yellow);
   }
 }
 
@@ -143,9 +111,8 @@ static void draw_winscreen() {
   const char *title =
       g_seriesNoContest ? "NO CONTEST" : (g_seriesWon ? "VICTORY" : "DEFEAT");
   const Color shadow(0, 0, 0, 200);
-  DrawTextCenteredOutlined(sw / 2, cy - 120, title, FONT_HUGE,
-                           g_seriesNoContest ? gold : (g_seriesWon ? green : red),
-                           shadow, STYLE_BRADY);
+  DrawBigHeadline(sw / 2, cy - 125, title, 44,
+                  g_seriesNoContest ? gold : (g_seriesWon ? green : red));
   const char *sub = g_seriesNoContest ? "no result - too many draws"
                     : g_winForfeit    ? "by forfeit"
                                       : nullptr;
@@ -154,7 +121,7 @@ static void draw_winscreen() {
     snprintf(sc, sizeof(sc), "%d - %d", g_youWins, g_ghostWins);
     sub = sc;
   }
-  DrawTextCenteredOutlined(sw / 2, cy - 56, sub, FONT_BIG, white, shadow,
+  DrawTextCenteredOutlined(sw / 2, cy - 64, sub, FONT_BIG, white, shadow,
                            STYLE_BRADY);
   if (g_ratingRanked) {
     double a = (Time() - g_winStart - 0.6) / 1.8;
@@ -166,15 +133,14 @@ static void draw_winscreen() {
     int shown = (int)(v + 0.5);
     char el[48];
     snprintf(el, sizeof(el), "RATING %d", shown);
-    DrawTextCenteredOutlined(sw / 2, cy + 6, el, FONT_BIG,
-                             Color(255, 232, 40, 255), shadow, STYLE_BRADY);
+    DrawBigHeadline(sw / 2, cy - 12, el, 38, Color(255, 232, 40, 255)); // key takeaway: prominent
     int d = g_ratingNew - g_ratingOld;
     char dl[24];
     snprintf(dl, sizeof(dl), "%+d", d);
-    DrawTextCenteredOutlined(sw / 2, cy + 46, dl, FONT_BIG, d >= 0 ? green : red,
+    DrawTextCenteredOutlined(sw / 2, cy + 50, dl, FONT_BIG, d >= 0 ? green : red,
                              shadow, STYLE_BRADY);
   }
-  DrawTextCenteredOutlined(sw / 2, sh - 56, "returning to menu...", FONT_NORMAL,
+  DrawTextCenteredOutlined(sw / 2, sh - 54, "returning to menu...", FONT_NORMAL,
                            grey, shadow, STYLE_BRADY);
 }
 

@@ -26,7 +26,7 @@ static void net_handle(const std::string &ln) {
   char a[40] = {0}, b[40] = {0};
   long t;
   float x, y;
-  int rk = 0, iv = 0, lv = -1, cap = 0;
+  int rk = 0, iv = 0, lv = -1, cap = 0, rkSelf = 0;
   unsigned sd = 0;
   unsigned long long hh = 0;
   char eC = 0, mC = 0;
@@ -82,9 +82,10 @@ static void net_handle(const std::string &ln) {
     }
   } else if (sscanf(ln.c_str(), "oh %ld %llx %39s", &t, &hh, a) == 3)
     note_opp_hash(t, (uint64_t)hh, a);
-  else if (sscanf(ln.c_str(), "rating %d %d", &iv, &rk) >= 1) {
+  else if ((rk = -1, sscanf(ln.c_str(), "rating %d %d", &iv, &rk)) >= 1) {
     g_myRating = iv;
-    g_myRank = rk; // 2nd token; old single-token lines leave rk at its 0 default
+    if (rk >= 0)
+      g_myRank = rk; // adopt only when the rank token is present (0 = unranked); else keep it
   }
   else if (strncmp(ln.c_str(), "nocontest", 9) == 0) {
     g_noContest = true;
@@ -104,15 +105,17 @@ static void net_handle(const std::string &ln) {
   } else if (strncmp(ln.c_str(), "obend", 5) == 0)
     g_oppBuildReady = true;
   // match <selfId> <oppId> <ranked> <levelIndex> <seed> <myRating> <oppRating> <myRank> <oppRank>
-  else if ((g_myRank = g_oppRank = 0, // clear stale; short/old lines leave both at 0
+  else if ((g_oppRank = rkSelf = 0, // opp rank is per-match; short/old lines leave both 0
             sscanf(ln.c_str(), "match %39s %39s %d %d %u %d %d %d %d", a, b, &rk,
-                   &lv, &sd, &iv, &g_oppRating, &g_myRank, &g_oppRank)) >= 2) {
+                   &lv, &sd, &iv, &g_oppRating, &rkSelf, &g_oppRank)) >= 2) {
     g_matched = true;
     g_queueing = false;   // matched -> leave the searching state
     g_hostCode[0] = 0;    // matched -> the host code is spent
     g_ranked = rk != 0;
     if (g_ranked && iv > 0)
       g_myRating = iv;   // ranked match refreshes the ladder rating; casual/private send 0, don't clobber it
+    if (g_ranked && rkSelf > 0)
+      g_myRank = rkSelf; // persist ladder rank; casual sends 0, don't wipe the badge
     g_oppId = b;
     g_levelIndex = lv;
     if (sd)
@@ -203,8 +206,8 @@ static void net_handle(const std::string &ln) {
     g_ratingNew = en;
     if (g_ratingRanked && en > 0)
       g_myRating = en;
-    if (g_ratingRanked)
-      g_myRank = rnk; // refreshed ladder rank after the series
+    if (g_ratingRanked && rnk > 0)
+      g_myRank = rnk; // refreshed ladder rank; never let a rankless (0) series_over wipe the badge
 
     g_showdownKind = 0;
     g_loadAfterShowdown = false;
