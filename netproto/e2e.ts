@@ -167,11 +167,11 @@ function fakeMod(port: number): Mod {
   else if (r1) fail("round-1 result wrong: " + r1);
   A.send("finish 90 1 5");
   const so = await A.expect((l) => l.startsWith("series "), "A series_over");
-  if (so === "series you 2 0 0 0 0 0")
+  if (so === "series you 2 0 0 0 0 0 0")
     ok("best-of-3 -> A (2-0, private/no-elo): " + so);
   else if (so) fail("series wrong: " + so);
   const soB = await B.expect((l) => l.startsWith("series "), "B series_over");
-  if (soB === "series opponent 0 2 0 0 0 0") ok("B sees series loss: " + soB);
+  if (soB === "series opponent 0 2 0 0 0 0 0") ok("B sees series loss: " + soB);
   else if (soB) fail("B series wrong: " + soB);
 
   // ---- 2) ranked matchmaking queue ----
@@ -289,8 +289,11 @@ function fakeMod(port: number): Mod {
   }
   const es = await E.expect((l) => l.startsWith("series "), "E series_over");
   const fs2 = await F.expect((l) => l.startsWith("series "), "F series_over");
-  // series <winner> <yw> <ow> <ranked> <rOld> <rNew> <forfeit>
+  // series <winner> <yw> <ow> <ranked> <rOld> <rNew> <forfeit> <rank>
   const ep = es ? es.split(" ") : [];
+  if (es && Number.isInteger(+ep[8]) && +ep[8] >= 0)
+    ok("series carries ladder rank token: #" + ep[8]);
+  else if (es) fail("series rank token missing/invalid: " + es);
   if (
     es &&
     ep[1] === "you" &&
@@ -316,13 +319,13 @@ function fakeMod(port: number): Mod {
   await E.expect((l) => l.startsWith("match "), "E rematch");
   await F.expect((l) => l.startsWith("match "), "F rematch");
   F.send("forfeit");
-  // a forfeit series line ends with the forfeit flag 1 (the prior rating series ended 0)
+  // a forfeit series line carries forfeit flag 1 at field 7 (rank trails as field 8)
   const efWin = await E.expect(
-    (l) => l.startsWith("series ") && l.endsWith(" 1"),
+    (l) => l.startsWith("series ") && l.split(" ")[7] === "1",
     "E wins on F forfeit",
   );
   const ffLoss = await F.expect(
-    (l) => l.startsWith("series ") && l.endsWith(" 1"),
+    (l) => l.startsWith("series ") && l.split(" ")[7] === "1",
     "F sees own forfeit loss",
   );
   if (efWin && efWin.split(" ")[1] === "you" && efWin.split(" ")[7] === "1")

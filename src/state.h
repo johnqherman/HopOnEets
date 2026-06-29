@@ -147,8 +147,8 @@ static int g_showdownKind = 0; // 0=none, 1=match-start, 2=between-rounds
 static int g_showdownRound = 0;
 static int g_lastRoundWin = 0; // 1=you, -1=opp, 0=none/tie
 static bool g_lastRoundTie = false; // last round was a draw (both DNF) -> replayed; shown on the between-round card
-static int g_pendingShowdown =
-    0; // consumed at synced countdown so both clients show together
+static bool g_loadAfterShowdown =
+    false; // hold the level load until the pre-load card (face-off/round) ends
 static double g_showdownUntil = 0.0;
 static constexpr double SHOWDOWN_SECS_MATCH = 4.0;
 static constexpr double SHOWDOWN_SECS_ROUND = 3.5;
@@ -162,6 +162,7 @@ static bool g_winForfeit = false;
 static bool g_ratingRanked = false;
 static int g_ratingOld = 0, g_ratingNew = 0;
 static int g_myRating = 0, g_oppRating = 0;
+static int g_myRank = 0, g_oppRank = 0; // 1-based ladder rank; 0 = none / unranked / outside top 50
 static constexpr double WINSCREEN_SECS = 6.0;
 static int g_lastBuildTick = -1;
 static int g_lastRoundTick = -1;

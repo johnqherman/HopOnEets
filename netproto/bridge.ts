@@ -120,7 +120,7 @@ export function startBridge(opts: BridgeOpts): {
         switch (m.type) {
           case "match_config":
             toMod(
-              `match ${m.match_id} ${m.opponent} ${m.ranked ? 1 : 0} ${m.level ?? -1} ${m.seed ?? 0} ${m.self_r ?? 0} ${m.opp_r ?? 0}`,
+              `match ${m.match_id} ${m.opponent} ${m.ranked ? 1 : 0} ${m.level ?? -1} ${m.seed ?? 0} ${m.self_r ?? 0} ${m.opp_r ?? 0} ${m.self_rank ?? 0} ${m.opp_rank ?? 0}`,
             );
             break;
           case "countdown":
@@ -161,11 +161,11 @@ export function startBridge(opts: BridgeOpts): {
             toMod(`result ${m.winner} ${m.reason} ${m.you_wins} ${m.opp_wins}`);
             break;
           case "rating":
-            toMod(`rating ${m.value ?? 0}`);
+            toMod(`rating ${m.value ?? 0} ${m.rank ?? 0}`);
             break;
           case "series_over":
             toMod(
-              `series ${m.winner} ${m.you_wins} ${m.opp_wins} ${m.ranked ? 1 : 0} ${m.r_old ?? 0} ${m.r_new ?? 0} ${m.forfeit ? 1 : 0}`,
+              `series ${m.winner} ${m.you_wins} ${m.opp_wins} ${m.ranked ? 1 : 0} ${m.r_old ?? 0} ${m.r_new ?? 0} ${m.forfeit ? 1 : 0} ${m.rank ?? 0}`,
             );
             break;
           case "opponent_left":
