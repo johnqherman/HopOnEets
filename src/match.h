@@ -124,6 +124,22 @@ static void match_update() {
       end_series_to_menu();
     return;
   }
+  // custom cards (face-off / between-round) show BEFORE the level loads: hold gameplay while the
+  // card plays, keep the lingering victory dialog dismissed, then load + ready once it ends
+  if (g_loadAfterShowdown) {
+    if (g_matched) {
+      void *cr = World_GetCreator();
+      Creator_ClearWinEffect(cr);
+      Creator_StopAllModals(cr);
+    }
+    if (Time() >= g_showdownUntil) {
+      if (g_autoLoad)
+        load_match_level();
+      net_sendline("ready");
+      g_loadAfterShowdown = false;
+    }
+    return;
+  }
   // win-effect timer (Builder+0x2fa4) re-shows victory dialog ~1s after win, so
   // re-dismiss every frame
   if (g_interRound && g_matched) {
