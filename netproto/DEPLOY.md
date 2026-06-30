@@ -60,3 +60,25 @@ hosted relay; ranked results are the provisional same-platform outcome.
 
 The mod connects directly to `wss://<DOMAIN>/` (no separate bridge process). Set the relay host in the
 mod config (`relay_url`); see the mod README. The local `bridge.ts` is now only a dev/test tool.
+
+## Self-update (auto-download)
+
+Clients send their bundle version in `hello`. If it's older than `LATEST_VERSION`, the relay points
+them at the latest `.eetsmod` (a GitHub release asset); the client downloads it in the background,
+verifies the sha256, overwrites its own bundle, and the loader re-unpacks on the next launch. While an
+update is pending the client blocks ALL multiplayer and shows a boot "UPDATING" screen with a Restart
+button.
+
+Cutting a release:
+1. Bump `version` in `hop_on_eets.cfg`, repack: `make pack` (or the deploy repack).
+2. Create a GitHub release and upload `hop_on_eets.eetsmod` as an asset.
+3. Compute its hash: `sha256sum hop_on_eets.eetsmod`.
+4. Set relay env (e.g. in `netproto/.env`, read by docker-compose) and restart the relay:
+   - `LATEST_VERSION=0.3.1`
+   - `UPDATE_URL=https://github.com/<owner>/<repo>/releases/download/v0.3.1/hop_on_eets.eetsmod`
+   - `UPDATE_SHA256=<sha256sum output>`
+   - `MIN_VERSION=` (optional; clients below it are flagged "required" — currently any pending update
+     already blocks multiplayer, so this is informational)
+
+Leave `LATEST_VERSION` blank to disable update prompts. The download is https-only and follows the
+GitHub→CDN redirect. The client never trusts the bundle without the sha256 match (when set).

@@ -44,6 +44,7 @@ export function startBridge(opts: BridgeOpts): {
           type: "hello",
           uuid: a[1] || player,
           player_id: a[2] || a[1] || player,
+          version: a[3] || "0.0.0",
         });
         break;
       case "host":
@@ -79,7 +80,7 @@ export function startBridge(opts: BridgeOpts): {
           vx: a[10] !== undefined ? +a[10] : 0,
           vy: a[11] !== undefined ? +a[11] : 0,
         });
-        break; // a[4..11] = emo/mot/flip/rot/anim/frame/vx/vy
+        break;
       case "hash":
         relay.send({ type: "hash", tick: +a[1], hash: a[2], platform: a[3] });
         break;
@@ -159,6 +160,11 @@ export function startBridge(opts: BridgeOpts): {
             break;
           case "result":
             toMod(`result ${m.winner} ${m.reason} ${m.you_wins} ${m.opp_wins}`);
+            break;
+          case "update":
+            toMod(
+              `update ${m.version} ${m.url} ${m.sha256 || "-"} ${m.required ? 1 : 0}`,
+            );
             break;
           case "rating":
             toMod(`rating ${m.value ?? 0} ${m.rank ?? 0}`);

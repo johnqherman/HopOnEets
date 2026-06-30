@@ -144,6 +144,61 @@ static void draw_winscreen() {
                            grey, shadow, STYLE_BRADY);
 }
 
+// boot update screen: % bar while downloading, Restart button at 100%. true if it drew (owns frame).
+static bool draw_update_overlay() {
+  int us = g_updateState.load();
+  if (us == UPD_NONE || g_matched)
+    return false;
+  if (us == UPD_FAILED && g_updateHide)
+    return false; // dismissed -> fall back to the menu (multiplayer stays blocked)
+  int sw = ScreenWidth(), sh = ScreenHeight(), cx = sw / 2, cy = sh / 2;
+  GFX_ResetViewOffset();
+  FillRect(0, 0, sw, sh, Color(10, 9, 20, 236));
+  Color white(245, 245, 255, 255), gold(255, 210, 40, 255), green(120, 255, 120, 255),
+      red(255, 90, 80, 255), grey(170, 170, 190, 255), shadow(0, 0, 0, 200);
+  DrawBigHeadline(cx, cy - 132, "UPDATING", 44, gold);
+
+  if (us == UPD_DONE) {
+    char l[64];
+    snprintf(l, sizeof(l), "v%s downloaded", g_updateVer.c_str());
+    DrawTextCenteredOutlined(cx, cy - 50, l, FONT_NORMAL, green, shadow, STYLE_BRADY);
+    int bw = 280, bh = 56, bx = cx - bw / 2, by = cy + 6;
+    bool hov = UI::hover(bx, by, bw, bh);
+    UI::FillRoundRect(bx, by, bw, bh, 12, hov ? Color(255, 150, 70, 255) : Color(230, 58, 48, 255));
+    DrawTextCentered(cx, UI::centerY(by, bh, FONT_BIG), "RESTART EETS", FONT_BIG, white, STYLE_BRADY);
+    if (UI::hit(bx, by, bw, bh))
+      restart_game();
+    DrawTextCenteredOutlined(cx, by + bh + 22, "restart to finish the update", FONT_SMALL, grey,
+                             shadow, STYLE_BRADY);
+  } else if (us == UPD_FAILED) {
+    DrawTextCenteredOutlined(cx, cy - 50, "download failed", FONT_NORMAL, red, shadow, STYLE_BRADY);
+    DrawTextCenteredOutlined(cx, cy - 18, "grab the latest from the releases page", FONT_SMALL, grey,
+                             shadow, STYLE_BRADY);
+    int bw = 220, bh = 48, bx = cx - bw / 2, by = cy + 24;
+    bool hov = UI::hover(bx, by, bw, bh);
+    UI::FillRoundRect(bx, by, bw, bh, 10, hov ? Color(120, 120, 140, 255) : Color(80, 80, 95, 255));
+    DrawTextCentered(cx, UI::centerY(by, bh, FONT_NORMAL), "CONTINUE", FONT_NORMAL, white, STYLE_BRADY);
+    if (UI::hit(bx, by, bw, bh))
+      g_updateHide = true;
+  } else { // AVAIL / DOWNLOADING
+    int p = g_updateProgress.load();
+    int bw = 440, bh = 28, bx = cx - bw / 2, by = cy - 18;
+    UI::FillRoundRect(bx, by, bw, bh, bh / 2, Color(40, 38, 55, 255));
+    if (p >= 0) {
+      int fw = bw * p / 100;
+      if (fw < bh) fw = bh; // keep the rounded cap visible at low %
+      if (fw > bw) fw = bw;
+      UI::FillRoundRect(bx, by, fw, bh, bh / 2, gold);
+      char pl[16];
+      snprintf(pl, sizeof(pl), "%d%%", p);
+      DrawTextCentered(cx, cy + 34, pl, FONT_NORMAL, white, STYLE_BRADY);
+    } else {
+      DrawTextCentered(cx, cy + 34, "downloading...", FONT_NORMAL, white, STYLE_BRADY);
+    }
+  }
+  return true;
+}
+
 static void draw_hud() {
   UI::NewFrame();   // once per frame, before any widget
   if (g_winShow && Time() < g_winUntil) {
@@ -154,6 +209,8 @@ static void draw_hud() {
     draw_showdown();
     return;
   } // custom card owns the screen - drawn over the menu / old level, before the load
+  if (draw_update_overlay())
+    return; // self-update screen owns the frame on boot until restart
   if (g_matched && (!net_up() || g_oppDropped)) {
     GFX_ResetViewOffset();
     char b[64];
