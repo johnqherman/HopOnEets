@@ -34,6 +34,24 @@ static void draw_menu() {
     if (UI::Button("Retry connection"))
       net_connect();
   }
+  // self-update status
+  switch (g_updateState.load()) {
+  case UPD_DOWNLOADING: {
+    char ul[96];
+    snprintf(ul, sizeof(ul), "DOWNLOADING UPDATE v%s", g_updateVer.c_str());
+    UI::SectionStatus(ul, Color(255, 210, 40, 255));
+    break;
+  }
+  case UPD_DONE: {
+    char ul[96];
+    snprintf(ul, sizeof(ul), "UPDATE v%s READY - RESTART EETS", g_updateVer.c_str());
+    UI::SectionStatus(ul, Color(70, 220, 90, 255));
+    break;
+  }
+  case UPD_FAILED:
+    UI::SectionStatus("UPDATE FAILED - DOWNLOAD MANUALLY", Color(235, 70, 55, 255));
+    break;
+  }
   if (!g_matched) { // name editing only in the lobby - no mid-match name changes
     if (g_nameEntry) {
       char nl[64];
@@ -116,6 +134,11 @@ static void draw_menu() {
       net_close();
       net_connect();
     }
+  } else if (update_blocks_mp()) {
+    // out of date: all multiplayer blocked until restart
+    g_confirmForfeit = false;
+    UI::Label("Update required to play online.");
+    UI::Label("Restart once it finishes downloading.");
   } else {
     g_confirmForfeit = false;
     UI::BeginColumns(2);

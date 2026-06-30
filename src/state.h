@@ -7,6 +7,7 @@
 #include "eets_ui.h"
 #include <cstdio>
 #include <cstring>
+#include <atomic>
 #include <cstdint>
 #include <cstdlib>
 #include <string>
@@ -163,6 +164,16 @@ static bool g_ratingRanked = false;
 static int g_ratingOld = 0, g_ratingNew = 0;
 static int g_myRating = 0, g_oppRating = 0;
 static int g_myRank = 0, g_oppRank = 0; // 1-based ladder rank; 0 = none / unranked / outside top 50
+
+// self-update: our version (hello) vs the relay's latest. g_updateState: worker writes, UI reads -> atomic.
+static std::string g_modVersion = "0.0.0";
+static std::string g_updateVer, g_updateUrl, g_updateSha;
+static bool g_updateRequired = false; // below the relay's min supported (messaging only)
+static std::atomic<int> g_updateState{0};
+static std::atomic<int> g_updateProgress{-1}; // download %, -1 = unknown
+static bool g_updateHide = false;             // overlay dismissed after a failed download
+// any pending update blocks all multiplayer until restart
+static bool update_blocks_mp() { return g_updateState.load() != 0; }
 static constexpr double WINSCREEN_SECS = 6.0;
 static int g_lastBuildTick = -1;
 static int g_lastRoundTick = -1;

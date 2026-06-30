@@ -4,6 +4,12 @@
 #include "levels.h"
 #include "ws_client.h"
 #include "animtable.h"
+#include "update.h"
+
+// hello carries our version for update checks
+static std::string hello_line() {
+  return "hello " + g_playerUuid + " " + g_playerId + " " + g_modVersion;
+}
 
 static void net_sendline(const std::string &s);
 [[maybe_unused]] static void note_opp_hash(long tick, uint64_t h,
@@ -39,7 +45,6 @@ static void net_handle(const std::string &ln) {
                   &eC, &mC, &fl, &rot, anim, &frm, &vlx, &vly);
   if (gn >= 3 && strncmp(ln.c_str(), "g ", 2) == 0) {
     if (valid_pos(x, y)) {
-      // shift current -> prev, then store the new sample
       g_livePrevX = g_liveX;
       g_livePrevY = g_liveY;
       g_livePrevTick = g_liveTick;
@@ -87,6 +92,21 @@ static void net_handle(const std::string &ln) {
     if (rk >= 0)
       g_myRank = rk; // adopt only when the rank token is present (0 = unranked); else keep it
   }
+  // update <version> <url> <sha256|-> <required:0|1> : relay offers a newer .eetsmod
+  else if (strncmp(ln.c_str(), "update ", 7) == 0) {
+    char uv[24] = {0}, url[512] = {0}, sha[80] = {0};
+    int req = 0;
+    if (sscanf(ln.c_str(), "update %23s %511s %79s %d", uv, url, sha, &req) >= 2) {
+      g_updateVer = uv;
+      g_updateUrl = url;
+      g_updateSha = (sha[0] && strcmp(sha, "-") != 0) ? sha : "";
+      g_updateRequired = req != 0;
+      if (g_updateState.load() == UPD_NONE)
+        g_updateState = UPD_AVAIL;
+      snprintf(g_netMsg, sizeof(g_netMsg), "downloading update v%s...", uv);
+      update_begin(); // background download + self-replace
+    }
+  }
   else if (strncmp(ln.c_str(), "nocontest", 9) == 0) {
     g_noContest = true;
     long nt = -1;
@@ -109,7 +129,7 @@ static void net_handle(const std::string &ln) {
             sscanf(ln.c_str(), "match %39s %39s %d %d %u %d %d %d %d", a, b, &rk,
                    &lv, &sd, &iv, &g_oppRating, &rkSelf, &g_oppRank)) >= 2) {
     g_matched = true;
-    g_queueing = false;   // matched -> leave the searching state
+    g_queueing = false;
     g_hostCode[0] = 0;    // matched -> the host code is spent
     g_ranked = rk != 0;
     if (g_ranked && iv > 0)
@@ -260,7 +280,7 @@ static void net_poll() { wsc_poll(net_handle); }
 static bool net_connect() {
   if (!wsc_connect(g_relayUrl))
     return false;
-  wsc_send_text("hello " + g_playerUuid + " " + g_playerId);
+  wsc_send_text(hello_line());
   return true;
 }
 
@@ -294,7 +314,7 @@ static void refresh_player_id() {
     return;
   g_playerId = nm;
   if (net_up())
-    net_sendline("hello " + g_playerUuid + " " + g_playerId);
+    net_sendline(hello_line());
 }
 
 // F6 name override; empty -> revert to profile; persisted under save key
@@ -474,6 +494,7 @@ static void mod_init() {
     return std::string(v ? v : d);
   };
   g_online = true;
+  g_modVersion = cfgS("version", "0.0.0"); // from the .eetsmod manifest; sent in hello for update checks
   g_playerUuid = cfgS("player_uuid", "");
   if (g_playerUuid.empty()) {
     g_playerUuid = gen_uuid();

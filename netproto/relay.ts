@@ -43,6 +43,20 @@ const BEST_OF = 3,
 // volatility change. each ranked series = one rating period vs one opponent (lichess-style per-game).
 const RATING_FILE =
   process.env.RATING_FILE || process.env.ELO_FILE || "ratings.json";
+// self-update: outdated clients (hello version < LATEST_VERSION) get pointed at UPDATE_URL (sha-verified)
+const LATEST_VERSION = process.env.LATEST_VERSION || "";
+const MIN_VERSION = process.env.MIN_VERSION || "";
+const UPDATE_URL = process.env.UPDATE_URL || "";
+const UPDATE_SHA256 = process.env.UPDATE_SHA256 || "";
+function verLt(a: string, b: string): boolean {
+  const pa = a.split(".").map((n) => parseInt(n, 10) || 0);
+  const pb = b.split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i] || 0, y = pb[i] || 0;
+    if (x !== y) return x < y;
+  }
+  return false;
+}
 const SEED = 500, // new-player starting display rating (low, chess.com-style)
   FLOOR = 100, // ratings never drop below this
   CENTER = 1500, // Glicko-2 mu-transform center: fixed convention, never retune (stored ratings depend on it)
@@ -82,7 +96,6 @@ function saveRatings(): void {
     console.error("[relay] rating save failed:", e);
   }
 }
-// one Glicko-2 step for `p` after a game vs `opp` with score s (1 win / 0 loss); returns new state
 // one Glicko-2 rating period: `scores` = this player's per-round results (1 win / 0 loss) over the
 // series, all vs `opp` at its pre-series rating. Batched (not per-round), so it's order-independent.
 function glicko2(p: Rating, opp: Rating, scores: number[]): Rating {
@@ -429,7 +442,6 @@ export function startRelay(
     );
     const match = p.match;
     if (p.wins >= WINS_NEEDED || q.wins >= WINS_NEEDED) {
-      // series decided
       const pWon = p.wins >= WINS_NEEDED;
       let pE = { old: 0, neu: 0 },
         qE = { old: 0, neu: 0 };
@@ -525,6 +537,15 @@ export function startRelay(
         case "hello": {
           p.id = String(m.uuid ?? m.player_id ?? "anon");
           p.name = String(m.player_id ?? p.id);
+          const ver = String(m.version ?? "0.0.0");
+          if (LATEST_VERSION && UPDATE_URL && verLt(ver, LATEST_VERSION))
+            conn.send({
+              type: "update",
+              version: LATEST_VERSION,
+              url: UPDATE_URL,
+              sha256: UPDATE_SHA256 || "-",
+              required: MIN_VERSION ? verLt(ver, MIN_VERSION) : false,
+            });
           const h = held.get(p.id); // reconnecting into a held match?
           const q = h && peers.get(h.oppConn);
           if (h && q && q.match === h.match && !q.opp) {

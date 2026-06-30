@@ -9,6 +9,7 @@ export function modLineToMsg(line: string, fallbackName = "anon"): any | null {
         type: "hello",
         uuid: a[1] || fallbackName,
         player_id: a[2] || a[1] || fallbackName,
+        version: a[3] || "0.0.0",
       };
     case "host":
       return { type: "host" };
@@ -85,6 +86,8 @@ export function msgToModLine(m: any): string | null {
       return `nocontest ${m.reason} ${m.tick ?? -1}`;
     case "result":
       return `result ${m.winner} ${m.reason} ${m.you_wins} ${m.opp_wins}`;
+    case "update":
+      return `update ${m.version} ${m.url} ${m.sha256 || "-"} ${m.required ? 1 : 0}`;
     case "rating":
       return `rating ${m.value ?? 0} ${m.rank ?? 0}`;
     case "series_over":

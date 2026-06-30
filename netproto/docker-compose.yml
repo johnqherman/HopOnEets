@@ -5,6 +5,11 @@ services:
     environment:
       - PORT=38500
       - RATING_FILE=/data/elo.json # existing volume file; legacy Elo numbers migrate to Glicko on load
+      # self-update: outdated clients pointed at the latest .eetsmod. Blank LATEST_VERSION = off.
+      - LATEST_VERSION=${LATEST_VERSION:-}
+      - MIN_VERSION=${MIN_VERSION:-}
+      - UPDATE_URL=${UPDATE_URL:-}
+      - UPDATE_SHA256=${UPDATE_SHA256:-}
     volumes:
       - elo:/data
     ports:
