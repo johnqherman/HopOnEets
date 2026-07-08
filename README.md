@@ -97,4 +97,10 @@ This repo holds the mod, rulesets, level pool, networking, and tooling. It depen
 for loading, hooks, the engine API, and the RE address maps. Ships as one `.eetsmod` and declares
 `sim = 1` (it controls the simulation).
 
-Not affiliated with or endorsed by Klei Entertainment; _Eets_ and its assets belong to their owners.
+## License
+
+MIT.
+
+Not affiliated with or endorsed by Klei Entertainment; _Eets_ and its assets belong to
+their owners. This mod ships no game code, only original code and addresses derived from
+our own copy of the game. Use at your own risk.
