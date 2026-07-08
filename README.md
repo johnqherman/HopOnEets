@@ -7,16 +7,15 @@
 A multiplayer / ranked competitive mod for **Eets** (the Klei puzzle
 game), built on [EetsMod](https://github.com/johnqherman/EetsMod).
 
-It's competitive **solution racing**: both players get the same puzzle, the same pinned
+It's competitive solution racing: both players get the same level, the same pinned
 seed, and the same inventory; a fixed build phase, then the deterministic sim runs and
-you race on completion + solution time — while watching your opponent play live as a
-translucent ghost. Ranked ladder, best-of series, host/join by code, casual and ranked
-queues.
+you race on completion + solution time while watching your opponent play live as a ghost.
+Ranked ladder, best-of series, host/join by code, casual and ranked queues.
 
 ## Playing
 
 1. **Set up mod support** for Eets: install the loader from
-   [eets-mod-framework](https://github.com/johnqherman/EetsMod#playing-with-mods)
+   [EetsMod](https://github.com/johnqherman/EetsMod#playing-with-mods)
    (drop one file in the game folder; Linux also sets a launch option).
 2. **Install the mod.** Grab `hop_on_eets.eetsmod` from a [release](../../releases) and
    put it in `<game>/mods`. Launch Eets and enable it from the **MODS** button on the
@@ -55,14 +54,14 @@ overlay — the sim keeps running underneath, since a real pause would desync th
 
 ## Building the mod
 
-Needs a sibling [eets-mod-framework](https://github.com/johnqherman/EetsMod) checkout
+Needs a sibling [EetsMod](https://github.com/johnqherman/EetsMod) checkout
 and `g++` (+ `i686-w64-mingw32-g++` for the Windows `.dll`).
 
 ```sh
 make                    # build/hop_on_eets.so  (Linux)
 make win                # build/hop_on_eets.dll (Windows)
 make pack               # hop_on_eets.eetsmod   (bundle, via the framework's eetsmod CLI)
-make FW=/path/to/eets-mod-framework   # if the framework lives elsewhere
+make FW=/path/to/eetsmod   # if the framework lives elsewhere
 ```
 
 The mod is one translation unit: `hop_on_eets.cpp` (thin entry layer) `#include`s
