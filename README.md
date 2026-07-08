@@ -41,7 +41,7 @@ overlay — the sim keeps running underneath, since a real pause would desync th
 
 - **Build phase.** A fixed number of build seconds, then the sim is force-started for
   both players. Your placements are captured and reconciled to the live build at sim
-  start; the opponent's locked-in build shows in-level as translucent ghost markers.
+  start; the opponent's locked-in build shows in-level as the real items, ghost-tinted.
 - **Deterministic race.** The mod pins FPS, seed, and det-mode and reuses Eets' own
   deterministic simulation (Park-Miller PRNG + fixed timestep, reverse-engineered from
   the game binary), so both clients run the identical puzzle. State hashes verify it.
