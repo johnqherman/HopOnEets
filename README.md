@@ -7,9 +7,9 @@
 A multiplayer / ranked competitive mod for **Eets** (the Klei puzzle
 game), built on [EetsMod](https://github.com/johnqherman/EetsMod).
 
-It's competitive solution racing: both players get the same level, the same pinned
-seed, and the same inventory; a fixed build phase, then the deterministic sim runs and
-you race on completion + solution time while watching your opponent play live as a ghost.
+Both players get the same level, the same pinned seed, and the same inventory;
+a fixed build phase, then the deterministic sim runs and you race on completion +
+s olution time while watching your opponent play live as a ghost.
 Ranked ladder, best-of series, host/join by code, casual and ranked queues.
 
 ## Playing
@@ -24,8 +24,8 @@ Ranked ladder, best-of series, host/join by code, casual and ranked queues.
    (shares a code), **Join by code**, or enter the **ranked / casual queue**. Both
    players build, the sim auto-starts, and you see the opponent live.
 
-The mod connects to the hosted relay (`wss://hoe.raccoonlagoon.com`) out of the box with
-no server setup. It also keeps itself current: an outdated client downloads the latest
+The mod connects to the hosted relay out of the box with no server setup.
+It also keeps itself current: an outdated client downloads the latest
 release in the background (sha256-verified), blocks multiplayer, and shows an
 **UPDATING** screen with a Restart button.
 
@@ -80,9 +80,6 @@ npm test           # end-to-end: host/join + ranked + realtime relay + build exc
 npm run typecheck  # tsc --noEmit (strict)
 npm run relay      # start a relay server (listens :38500; front with TLS for wss://)
 ```
-
-To host your own relay (Docker behind nginx, CI/CD, cutting a release for self-update),
-see [`netproto/DEPLOY.md`](netproto/DEPLOY.md).
 
 ## Layout
 
