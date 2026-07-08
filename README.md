@@ -21,26 +21,27 @@ queues.
 2. **Install the mod.** Grab `hop_on_eets.eetsmod` from a [release](../../releases) and
    put it in `<game>/mods`. Launch Eets and enable it from the **MODS** button on the
    main menu.
-3. **Play.** Press **F6** in game: **Host game** (shares a code), **Join by code**, or
-   enter the **ranked / casual queue**. Both players build, the sim auto-starts, and you
-   see the opponent live.
+3. **Play.** Click the **HOP ON EETS** button (main menu, top left): **Host game**
+   (shares a code), **Join by code**, or enter the **ranked / casual queue**. Both
+   players build, the sim auto-starts, and you see the opponent live.
 
 The mod connects to the hosted relay (`wss://hoe.raccoonlagoon.com`) out of the box —
 no server setup. It also keeps itself current: an outdated client downloads the latest
 release in the background (sha256-verified), blocks multiplayer, and shows an
 **UPDATING** screen with a Restart button.
 
-### Controls
+### The menu
 
-- **F6** — the one in-game menu: host/join/queue, online name, score, settings, leave &
-  forfeit. Join codes are typed here; your name + rating persist across restarts.
-- **CTRL+SHIFT+H** — toggle match mode (engages determinism). **CTRL+SHIFT+R** — new match.
+**HOP ON EETS** on the main menu (and on the pause screen) opens the one in-game menu:
+host/join/queue, online name, score, settings, leave & forfeit. Join codes are typed
+here; your name persists across restarts. Mid-match, **Esc** toggles the menu as a live
+overlay — the sim keeps running underneath, since a real pause would desync the race.
 
 ## How a match works
 
 - **Build phase.** A fixed number of build seconds, then the sim is force-started for
   both players. Your placements are captured and reconciled to the live build at sim
-  start; the opponent's locked-in build shows as ghost items.
+  start; the opponent's locked-in build shows in-level as translucent ghost markers.
 - **Deterministic race.** The mod pins FPS, seed, and det-mode and reuses Eets' own
   deterministic simulation (Park-Miller PRNG + fixed timestep, reverse-engineered from
   the game binary), so both clients run the identical puzzle. State hashes verify it.
@@ -88,7 +89,7 @@ see [`netproto/DEPLOY.md`](netproto/DEPLOY.md).
 
 ```
 hop_on_eets.cpp   thin entry layer (framework callbacks)
-src/              match net ghostview hud menu determinism levels recorder ws_client (one TU, all #included)
+src/              match net ghostview hud menu determinism levels recorder update ws_client ... (one TU, all #included)
 hop_on_eets.cfg   framework manifest (version, sim = 1)
 netproto/         relay + protocol + e2e tests (TypeScript, zero runtime deps)
 Makefile          build / win / pack
