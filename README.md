@@ -4,7 +4,7 @@
 
 [![deploy](https://github.com/johnqherman/HopOnEets/actions/workflows/deploy.yml/badge.svg)](https://github.com/johnqherman/HopOnEets/actions/workflows/deploy.yml)
 
-**Hop On Eets** — a multiplayer / ranked competitive mod for **Eets** (the Klei puzzle
+A multiplayer / ranked competitive mod for **Eets** (the Klei puzzle
 game), built on [eets-mod-framework](https://github.com/johnqherman/EetsMod).
 
 It's competitive **solution racing**: both players get the same puzzle, the same pinned
