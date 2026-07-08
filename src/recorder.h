@@ -69,9 +69,13 @@ static void begin_sim(bool fromReset) {
   if (g_matched) { // share locked-in build for opponent's ghost items
     for (auto &p : g_placements)
       if (!p.removed && valid_pos(p.x, p.y)) {
+        // wire lines are whitespace-tokenized: a blueprint name with a space
+        // would shift the x/y fields and the receiver drops the line
+        std::string nm = net_safe_id(p.blueprint);
+        if (nm.empty())
+          nm = "item";
         char bb[96];
-        snprintf(bb, sizeof(bb), "build %s %.1f %.1f", p.blueprint.c_str(), p.x,
-                 p.y);
+        snprintf(bb, sizeof(bb), "build %s %.1f %.1f", nm.c_str(), p.x, p.y);
         net_sendline(bb);
       }
     net_sendline("buildend");

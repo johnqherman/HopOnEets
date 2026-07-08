@@ -202,7 +202,6 @@ static void mod_on_text(const char *utf8) {
       g_codeBuf.push_back(ch);
   }
 }
-// Ctrl+Shift+H/R are dev match-mode toggle / new-match reset
 static void mod_on_key(int key, int mods, int down) {
   if (!down)
     return;

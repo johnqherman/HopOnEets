@@ -317,7 +317,7 @@ static void refresh_player_id() {
     net_sendline(hello_line());
 }
 
-// F6 name override; empty -> revert to profile; persisted under save key
+// menu name override; empty -> revert to profile; persisted under save key
 // player_id
 static void set_player_name(const std::string &raw) {
   std::string nm = net_safe_id(raw);
@@ -511,7 +511,7 @@ static void mod_init() {
   refresh_player_id();
   if (g_online && net_connect())
     g_netMsg[0] = 0; // connected: clear default "offline"
-  Eets::Log("hop_on_eets: ready (tick=%d build=%ds online=%d) - F6 opens the "
-            "match menu",
+  Eets::Log("hop_on_eets: ready (tick=%d build=%ds online=%d) - HOP ON EETS "
+            "button opens the match menu",
             TICK_RATE, g_buildSeconds, g_online ? 1 : 0);
 }
