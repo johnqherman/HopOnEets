@@ -14,6 +14,7 @@
 #include "src/levels.h"
 #include "src/net.h"
 #include "src/recorder.h"
+#include "src/itemtable.h"
 #include "src/ghostview.h"
 #include "src/menu.h"
 #include "src/match.h"

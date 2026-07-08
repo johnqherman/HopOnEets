@@ -231,7 +231,7 @@ static void draw_hud() {
     if (!g_interRound) {
       float dt = (float)DeltaTime();
       draw_ghost(dt);
-      draw_opp_build();
+      draw_opp_build(dt);
     } // draw_ghost gates on g_liveValid freshness
 
     if (!g_interRound) { // mid-transition victory makes draw calls unsafe
