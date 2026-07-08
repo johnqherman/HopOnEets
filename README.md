@@ -5,7 +5,7 @@
 [![deploy](https://github.com/johnqherman/HopOnEets/actions/workflows/deploy.yml/badge.svg)](https://github.com/johnqherman/HopOnEets/actions/workflows/deploy.yml)
 
 A multiplayer / ranked competitive mod for **Eets** (the Klei puzzle
-game), built on [eets-mod-framework](https://github.com/johnqherman/EetsMod).
+game), built on [EetsMod](https://github.com/johnqherman/EetsMod).
 
 It's competitive **solution racing**: both players get the same puzzle, the same pinned
 seed, and the same inventory; a fixed build phase, then the deterministic sim runs and
