@@ -138,13 +138,20 @@ static void draw_ghost(float dt) {
   DrawTextOutlined(sx - (int)strlen(label) * 4, sy - 48, label, FONT_SMALL,
                    Color(180, 220, 255, 255), Color(0, 0, 0, 200), STYLE_BRADY);
 }
-static void draw_opp_build() {
+static void draw_opp_build(float dt) {
   if (!g_showGhost || g_oppBuild.empty())
     return;
   for (auto &it : g_oppBuild) {
     if (!valid_pos(it.x, it.y))
       continue;
     int sx = (int)it.x, sy = (int)it.y;
+    // draw the real item, ghost-tinted, centered on the placement position;
+    // box marker only when no anim resolves (unmapped blueprint, or an
+    // install missing the asset)
+    const char *anim = item_anim_path(it.bp.c_str());
+    if (anim && DrawAnimCentered(anim, sx, sy, dt, 0.0f,
+                                 Color(255, 255, 255, GHOST_ALPHA)))
+      continue;
     FillRect(sx - 10, sy - 10, 20, 20, Color(170, 215, 255, 70));
     DrawRect(sx - 10, sy - 10, 20, 20, Color(200, 235, 255, 150), 1.0f);
   }
