@@ -24,7 +24,7 @@ Ranked ladder, best-of series, host/join by code, casual and ranked queues.
    (shares a code), **Join by code**, or enter the **ranked / casual queue**. Both
    players build, the sim auto-starts, and you see the opponent live.
 
-The mod connects to the hosted relay (`wss://hoe.raccoonlagoon.com`) out of the box —
+The mod connects to the hosted relay (`wss://hoe.raccoonlagoon.com`) out of the box with
 no server setup. It also keeps itself current: an outdated client downloads the latest
 release in the background (sha256-verified), blocks multiplayer, and shows an
 **UPDATING** screen with a Restart button.
@@ -34,7 +34,7 @@ release in the background (sha256-verified), blocks multiplayer, and shows an
 **HOP ON EETS** on the main menu (and on the pause screen) opens the one in-game menu:
 host/join/queue, online name, score, settings, leave & forfeit. Join codes are typed
 here; your name persists across restarts. Mid-match, **Esc** toggles the menu as a live
-overlay — the sim keeps running underneath, since a real pause would desync the race.
+overlay. The sim keeps running underneath, since a real pause would desync the race.
 
 ## How a match works
 
@@ -65,7 +65,7 @@ make FW=/path/to/eetsmod   # if the framework lives elsewhere
 ```
 
 The mod is one translation unit: `hop_on_eets.cpp` (thin entry layer) `#include`s
-`src/*.h`. It declares `sim = 1` in its manifest — it controls the simulation.
+`src/*.h`. It declares `sim = 1` in its manifest, as it controls the simulation.
 
 ## The relay (`netproto/`)
 
