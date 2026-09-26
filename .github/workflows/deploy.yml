@@ -26,14 +26,12 @@ jobs:
     needs: test # don't ship a relay that fails typecheck or e2e
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy relay server
-        uses: appleboy/ssh-action@v1.2.5
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v3
         with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          passphrase: ${{ secrets.SSH_PASSPHRASE }}
-          port: 22
-          script: |
-            cd /var/www/hoponeets
-            ./netproto/deploy.sh
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Deploy relay server
+        run: ssh -o StrictHostKeyChecking=no john@debian-4gb-ash-1 'cd /var/www/hoponeets && ./netproto/deploy.sh'
